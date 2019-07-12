@@ -8,5 +8,6 @@ namespace SocketHelper
     {
         发布消息 = 1,
         订阅消息,
+        回复消息
     }
 }

@@ -15,8 +15,8 @@ namespace SocketHelper
         public string topic { get; set; }
 
         /// <summary>
-        /// 消息内容 JSON对象
+        /// 消息内容 对象
         /// </summary>
-        public string content { get; set; }
+        public object content { get; set; }
     }
 }

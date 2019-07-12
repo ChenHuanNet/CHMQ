@@ -7,6 +7,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MQServer", "MQServer\MQServ
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SocketHelper", "SocketHelper\SocketHelper.csproj", "{4E0DCAEB-B097-465F-B8E9-7E513B5C282D}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MQClient", "MQClient\MQClient.csproj", "{E4278E03-236D-472B-B47F-803F48EF0630}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +23,10 @@ Global
 		{4E0DCAEB-B097-465F-B8E9-7E513B5C282D}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4E0DCAEB-B097-465F-B8E9-7E513B5C282D}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{4E0DCAEB-B097-465F-B8E9-7E513B5C282D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E4278E03-236D-472B-B47F-803F48EF0630}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E4278E03-236D-472B-B47F-803F48EF0630}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E4278E03-236D-472B-B47F-803F48EF0630}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E4278E03-236D-472B-B47F-803F48EF0630}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

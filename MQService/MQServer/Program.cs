@@ -1,4 +1,5 @@
-﻿using System;
+﻿using SocketHelper;
+using System;
 
 
 namespace MQServer
@@ -7,10 +8,11 @@ namespace MQServer
     {
         static void Main(string[] args)
         {
-            int a = 1;
-            uint b = 2;
-            Console.WriteLine(a < b);
-            Console.WriteLine("Hello World!");
+            Console.WriteLine("This is MQ Server");
+
+            AsynchronousSocketListener listener = new AsynchronousSocketListener(10000);
+            listener.StartListening();
+
             Console.ReadLine();
         }
 

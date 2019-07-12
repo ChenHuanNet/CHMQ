@@ -7,6 +7,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Timers;
 
 namespace SocketHelper
 {
@@ -21,10 +22,11 @@ namespace SocketHelper
 
         public ManualResetEvent allDone = new ManualResetEvent(false);
 
+        private uint _msgId = 0;
         /// <summary>
         /// 任务队列
         /// </summary>
-        ConcurrentQueue<BaseMsgObject> taskQueue;
+        ConcurrentQueue<OperateObject> taskQueue;
 
         /// <summary>
         /// 订阅对象
@@ -35,10 +37,19 @@ namespace SocketHelper
 
         public AsynchronousSocketListener(int port, string ipOrHost = "127.0.0.1", int connectCount = 1000)
         {
-            taskQueue = new ConcurrentQueue<BaseMsgObject>();
+            taskQueue = new ConcurrentQueue<OperateObject>();
             this.port = port;
             this.ipOrHost = ipOrHost;
             this.connectCount = connectCount;
+        }
+
+        private void CheckJob()
+        {
+            System.Timers.Timer timer = new System.Timers.Timer();
+            timer.Enabled = true;
+            timer.Interval = 200; //执行间隔时间,单位为毫秒; 这里实际间隔为10分钟  
+            timer.Start();
+            timer.Elapsed += new System.Timers.ElapsedEventHandler(Job);
         }
 
         /// <summary>
@@ -46,8 +57,7 @@ namespace SocketHelper
         /// </summary>
         public void StartListening()
         {
-            // Data buffer for incoming data.
-            byte[] bytes = new Byte[1024];
+            CheckJob();
             // Establish the local endpoint for the socket.
             // The DNS name of the computer
             // running the listener is "host.contoso.com".
@@ -164,12 +174,34 @@ namespace SocketHelper
 
         }
 
-        private void Send(Socket handler, object data)
+        private void Send(Socket handler, object data, MsgOperation msgOperation)
         {
             // Convert the string data to byte data using ASCII encoding.
             byte[] byteData = ByteConvert.ObjToByte(data);
+
+            byte[] sendData = new byte[12 + byteData.Length];
+            uint totalLength = (uint)(12 + byteData.Length);
+            try
+            {
+                if (_msgId >= uint.MaxValue)
+                {
+                    _msgId = uint.MinValue;
+                }
+                _msgId++;
+            }
+            catch (Exception ex)
+            {
+                _msgId = uint.MinValue;
+            }
+
+            uint msgId = _msgId;
+            Array.Copy(ByteConvert.UInt2Bytes(totalLength), 0, sendData, 0, 4);
+            Array.Copy(ByteConvert.UInt2Bytes(msgId), 0, sendData, 4, 4);
+            Array.Copy(ByteConvert.UInt2Bytes((uint)msgOperation), 0, sendData, 8, 4);
+            Array.Copy(byteData, 0, sendData, 12, byteData.Length);
+
             // Begin sending the data to the remote device.
-            handler.BeginSend(byteData, 0, byteData.Length, 0, new AsyncCallback(SendCallback), handler);
+            handler.BeginSend(sendData, 0, sendData.Length, 0, new AsyncCallback(SendCallback), handler);
         }
 
         private void SendCallback(IAsyncResult ar)
@@ -203,12 +235,12 @@ namespace SocketHelper
             //读取消息ID
             byte[] msgIdBytes = new byte[4];
             Array.Copy(state.totalBuffer, 8, msgIdBytes, 0, 4);
-            state.ope = (MsgOperation)ByteConvert.Byte2UintEasy(msgIdBytes);
+            state.msgId = ByteConvert.Byte2UintEasy(msgIdBytes);
             //读取消息体
             byte[] bodyBytes = new byte[state.totalLength - 12];
             Array.Copy(state.totalBuffer, 12, bodyBytes, 0, state.totalLength - 12);
 
-            BaseMsgObject obj = new BaseMsgObject();
+            OperateObject obj = new OperateObject();
             obj.ope = state.ope;
             obj.body = ByteConvert.ByteToObj(bodyBytes, bodyBytes.Length);
             obj.workSocket = state.workSocket;
@@ -217,6 +249,65 @@ namespace SocketHelper
 
             //加入队列
             taskQueue.Enqueue(obj);
+
+            BaseMsgObject baseMsgObject = new BaseMsgObject();
+            baseMsgObject.msgId = state.msgId;
+            baseMsgObject.code = 10000;
+            baseMsgObject.message = "已成功收到消息";
+            Send(state.workSocket, baseMsgObject, MsgOperation.回复消息);
+        }
+
+
+        private void Job(object source, ElapsedEventArgs e)
+        {
+            DoTask();
+        }
+
+        public void DoTask()
+        {
+            if (taskQueue.Count > 0)
+            {
+                bool res = taskQueue.TryDequeue(out OperateObject result);
+                if (res)
+                {
+                    switch (result.ope)
+                    {
+                        case MsgOperation.发布消息:
+                            PublishObject publishObject = (PublishObject)result.body;
+                            Task.Run(() =>
+                            {
+                                //订阅者中有人关注这个话题 就向订阅者发送消息
+                                if (subscribeList.ContainsKey(publishObject.topic))
+                                {
+                                    foreach (var socket in subscribeList[publishObject.topic])
+                                    {
+                                        Send(socket, publishObject.content, MsgOperation.回复消息);
+                                    }
+                                }
+
+                            });
+                            break;
+                        case MsgOperation.订阅消息:
+                            SubscribeObject subscribeObject = (SubscribeObject)result.body;
+                        trySubscribeAgain:
+                            if (subscribeList.ContainsKey(subscribeObject.topic))
+                            {
+                                subscribeList[subscribeObject.topic].Add(result.workSocket);
+                            }
+                            else
+                            {
+                                bool success = subscribeList.TryAdd(subscribeObject.topic, new ConcurrentBag<Socket>() { result.workSocket });
+                                if (success)
+                                {
+                                    goto trySubscribeAgain;
+                                }
+                            }
+                            break;
+                        default:
+                            break;
+                    }
+                }
+            }
         }
     }
 }

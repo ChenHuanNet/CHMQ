@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Net.Sockets;
 using System.Text;
 
-namespace SocketHelper.Entity
+namespace SocketHelper
 {
     /// <summary>
     /// 订阅消息体
@@ -11,10 +11,8 @@ namespace SocketHelper.Entity
     public class SubscribeObject
     {
         /// <summary>
-        /// 当前连接的socket对象
+        /// 订阅的消息标题
         /// </summary>
-        public Socket wordSocket { get; set; }
-
-        
+        public string topic { get; set; }
     }
 }
