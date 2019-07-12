@@ -1,14 +1,19 @@
 ﻿using System;
+using System.Collections;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace SocketHelper
 {
     // State object for reading client data asynchronously
     public class AsynchronousSocketListener
     {
+        #region 参数
         public int port;
         public string ipOrHost;
         public int connectCount;
@@ -16,13 +21,29 @@ namespace SocketHelper
 
         public ManualResetEvent allDone = new ManualResetEvent(false);
 
+        /// <summary>
+        /// 任务队列
+        /// </summary>
+        ConcurrentQueue<BaseMsgObject> taskQueue;
+
+        /// <summary>
+        /// 订阅对象
+        /// </summary>
+        ConcurrentDictionary<string, ConcurrentBag<Socket>> subscribeList = new ConcurrentDictionary<string, ConcurrentBag<Socket>>();
+
+        #endregion
+
         public AsynchronousSocketListener(int port, string ipOrHost = "127.0.0.1", int connectCount = 1000)
         {
+            taskQueue = new ConcurrentQueue<BaseMsgObject>();
             this.port = port;
             this.ipOrHost = ipOrHost;
             this.connectCount = connectCount;
         }
 
+        /// <summary>
+        /// 启动监听
+        /// </summary>
         public void StartListening()
         {
             // Data buffer for incoming data.
@@ -62,12 +83,13 @@ namespace SocketHelper
 
         }
 
-        public void AcceptCallback(IAsyncResult ar)
+        private void AcceptCallback(IAsyncResult ar)
         {
             // Signal the main thread to continue.
             allDone.Set();
             // Get the socket that handles the client request.
             Socket listener = (Socket)ar.AsyncState;
+            //接收到远程客户端的连接，新建一个socket对象去处理该连接发起的请求
             Socket handler = listener.EndAccept(ar);
             // Create the state object.
             StateObject state = new StateObject();
@@ -75,9 +97,8 @@ namespace SocketHelper
             handler.BeginReceive(state.buffer, 0, StateObject.BufferSize, 0, new AsyncCallback(ReadCallback), state);
         }
 
-        public void ReadCallback(IAsyncResult ar)
+        private void ReadCallback(IAsyncResult ar)
         {
-            string content = string.Empty;
             // Retrieve the state object and the handler socket
             // from the asynchronous state object.
             StateObject state = (StateObject)ar.AsyncState;
@@ -86,38 +107,69 @@ namespace SocketHelper
             int bytesRead = handler.EndReceive(ar);
             if (bytesRead > 0)
             {
-                // There    might be more data, so store the data received so far.
-                state.sb.Append(Encoding.ASCII.GetString(state.buffer, 0, bytesRead));
-                // Check for end-of-file tag. If it is not there, read
-                // more data.
-                content = state.sb.ToString();
-                if (content.IndexOf("<EOF>") > -1)
+                //不管是不是第一次接收，只要接收字节总长度小于4
+                if (state.readBufferLength + bytesRead < 4)
                 {
-                    // All the data has been read from the
-                    // client. Display it on the console.
-                    Console.WriteLine("Read {0} bytes from socket. \n Data : {1}",
-                    content.Length, content);
-                    // Echo the data back to the client.
-                    Send(handler, "Server return :" + content);
-                }
-                else
-                {
-                    // Not all data received. Get more.
-                    handler.BeginReceive(state.buffer, 0, StateObject.BufferSize, 0,
-                    new AsyncCallback(ReadCallback), state);
+                    Array.Copy(state.buffer, 0, state.totalBuffer, state.readBufferLength, bytesRead);
+                    state.readBufferLength += bytesRead;
+                    //继续接收
+                    handler.BeginReceive(state.buffer, 0, StateObject.BufferSize, 0, new AsyncCallback(ReadCallback), state);
+                    return;
                 }
 
+                //已读长度如果小于4 要先获取总的消息长度
+                if (state.readBufferLength < 4)
+                {
+                    //先拼出消息体长度 
+                    byte[] totalLengthBytes = new byte[4];
+                    if (state.readBufferLength > 0)
+                    {
+                        Array.Copy(state.totalBuffer, 0, totalLengthBytes, 0, state.readBufferLength);
+                    }
+                    int readLength = 4 - state.readBufferLength;
+                    Array.Copy(state.buffer, 0, totalLengthBytes, totalLengthBytes.Length, readLength);
+                    state.totalLength = ByteConvert.Byte2UintEasy(totalLengthBytes);
+                }
+
+                //还是没读完
+                if (state.totalLength > state.readBufferLength + bytesRead)
+                {
+                    Array.Copy(state.buffer, state.readBufferLength, state.totalBuffer, state.readBufferLength, bytesRead);
+                    state.readBufferLength += bytesRead;
+                    //继续接收
+                    handler.BeginReceive(state.buffer, 0, StateObject.BufferSize, 0, new AsyncCallback(ReadCallback), state);
+                    return;
+                }
+
+                //已经够读完了
+                Array.Copy(state.buffer, state.readBufferLength, state.totalBuffer, state.readBufferLength, state.totalLength - state.readBufferLength);
+
+                Task.Run(() =>
+                {
+                    Handle(state);
+                });
+
+                if (state.readBufferLength + bytesRead > state.totalLength)
+                {
+                    //这里说明一个完整的消息体接收完了，有可能还会读到下一次的消息体
+                    byte[] newTotalBuffer = new byte[state.readBufferLength + bytesRead - state.totalLength];
+                    Array.Copy(state.totalBuffer, state.totalLength, newTotalBuffer, 0, state.readBufferLength + bytesRead - state.totalLength);
+                    state = new StateObject();
+                    state.workSocket = handler;
+                    state.totalBuffer = newTotalBuffer;
+                    state.readBufferLength = newTotalBuffer.Length;
+                    handler.BeginReceive(state.buffer, 0, StateObject.BufferSize, 0, new AsyncCallback(ReadCallback), state);
+                }
             }
 
         }
 
-        private void Send(Socket handler, String data)
+        private void Send(Socket handler, object data)
         {
             // Convert the string data to byte data using ASCII encoding.
-            byte[] byteData = Encoding.ASCII.GetBytes(data);
+            byte[] byteData = ByteConvert.ObjToByte(data);
             // Begin sending the data to the remote device.
-            handler.BeginSend(byteData, 0, byteData.Length, 0,
-            new AsyncCallback(SendCallback), handler);
+            handler.BeginSend(byteData, 0, byteData.Length, 0, new AsyncCallback(SendCallback), handler);
         }
 
         private void SendCallback(IAsyncResult ar)
@@ -129,8 +181,8 @@ namespace SocketHelper
                 // Complete sending the data to the remote device.
                 int bytesSent = handler.EndSend(ar);
                 Console.WriteLine("Sent {0} bytes to client.", bytesSent);
-                handler.Shutdown(SocketShutdown.Both);
-                handler.Close();
+                //handler.Shutdown(SocketShutdown.Both);
+                //handler.Close();
             }
             catch (Exception e)
             {
@@ -138,5 +190,33 @@ namespace SocketHelper
             }
         }
 
+        /// <summary>
+        /// 接完到完整消息后处理消息
+        /// </summary>
+        /// <param name="state"></param>
+        private void Handle(StateObject state)
+        {
+            //读取话题
+            byte[] topicBytes = new byte[4];
+            Array.Copy(state.totalBuffer, 4, topicBytes, 0, 4);
+            state.ope = (MsgOperation)ByteConvert.Byte2UintEasy(topicBytes);
+            //读取消息ID
+            byte[] msgIdBytes = new byte[4];
+            Array.Copy(state.totalBuffer, 8, msgIdBytes, 0, 4);
+            state.ope = (MsgOperation)ByteConvert.Byte2UintEasy(msgIdBytes);
+            //读取消息体
+            byte[] bodyBytes = new byte[state.totalLength - 12];
+            Array.Copy(state.totalBuffer, 12, bodyBytes, 0, state.totalLength - 12);
+
+            BaseMsgObject obj = new BaseMsgObject();
+            obj.ope = state.ope;
+            obj.body = ByteConvert.ByteToObj(bodyBytes, bodyBytes.Length);
+            obj.workSocket = state.workSocket;
+            //obj.sendFuc = Send;
+            //obj.sendFucCallBack = SendCallback;
+
+            //加入队列
+            taskQueue.Enqueue(obj);
+        }
     }
 }
