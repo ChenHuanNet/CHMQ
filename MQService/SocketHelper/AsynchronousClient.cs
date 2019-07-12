@@ -13,7 +13,8 @@ namespace SocketHelper
 
         // The port number for the remote device.
 
-        private const int port = 11000;
+        private int port = 11000;
+        private string ipOrHost;
 
         // ManualResetEvent instances signal completion.
 
@@ -27,17 +28,20 @@ namespace SocketHelper
 
         private static string response = string.Empty;
 
+        public AsynchronousClient(int port, string ipOrHost = "127.0.0.1")
+        {
+            this.port = port;
+            this.ipOrHost = ipOrHost;
+        }
 
-
-        public static void StartClient()
+        public void StartClient()
         {
             // Connect to a remote device.
             try
             {
                 // Establish the remote endpoint for the socket.
                 // The name of the remote device is "host.contoso.com".
-                IPHostEntry ipHostInfo = Dns.Resolve("host.contoso.com");
-                IPAddress ipAddress = ipHostInfo.AddressList[0];
+                IPAddress ipAddress = Dns.GetHostAddresses(ipOrHost)[0];
                 IPEndPoint remoteEP = new IPEndPoint(ipAddress, port);
                 // Create a TCP/IP socket.
                 Socket client = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
@@ -63,9 +67,7 @@ namespace SocketHelper
             }
         }
 
-
-
-        private static void ConnectCallback(IAsyncResult ar)
+        private void ConnectCallback(IAsyncResult ar)
         {
             try
             {
@@ -84,9 +86,7 @@ namespace SocketHelper
 
         }
 
-
-
-        private static void Receive(Socket client)
+        private void Receive(Socket client)
         {
             try
             {
@@ -102,7 +102,7 @@ namespace SocketHelper
             }
         }
 
-        private static void ReceiveCallback(IAsyncResult ar)
+        private void ReceiveCallback(IAsyncResult ar)
         {
             try
             {
@@ -136,7 +136,7 @@ namespace SocketHelper
                 Console.WriteLine(e.ToString());
             }
         }
-        private static void Send(Socket client, String data)
+        private void Send(Socket client, String data)
         {
             // Convert the string data to byte data using ASCII encoding.
             byte[] byteData = Encoding.ASCII.GetBytes(data);
@@ -146,7 +146,7 @@ namespace SocketHelper
 
 
 
-        private static void SendCallback(IAsyncResult ar)
+        private void SendCallback(IAsyncResult ar)
         {
             try
             {
