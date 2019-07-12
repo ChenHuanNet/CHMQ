@@ -101,6 +101,9 @@ namespace SocketHelper
             Socket listener = (Socket)ar.AsyncState;
             //接收到远程客户端的连接，新建一个socket对象去处理该连接发起的请求
             Socket handler = listener.EndAccept(ar);
+
+            Console.WriteLine($"this is conntection {handler.AddressFamily.ToString()}");
+
             // Create the state object.
             StateObject state = new StateObject();
             state.workSocket = handler;
@@ -109,67 +112,77 @@ namespace SocketHelper
 
         private void ReadCallback(IAsyncResult ar)
         {
-            // Retrieve the state object and the handler socket
-            // from the asynchronous state object.
-            StateObject state = (StateObject)ar.AsyncState;
-            Socket handler = state.workSocket;
-            // Read data from the client socket.
-            int bytesRead = handler.EndReceive(ar);
-            if (bytesRead > 0)
+            try
             {
-                //不管是不是第一次接收，只要接收字节总长度小于4
-                if (state.readBufferLength + bytesRead < 4)
-                {
-                    Array.Copy(state.buffer, 0, state.totalBuffer, state.readBufferLength, bytesRead);
-                    state.readBufferLength += bytesRead;
-                    //继续接收
-                    handler.BeginReceive(state.buffer, 0, StateObject.BufferSize, 0, new AsyncCallback(ReadCallback), state);
-                    return;
-                }
 
-                //已读长度如果小于4 要先获取总的消息长度
-                if (state.readBufferLength < 4)
+                // Retrieve the state object and the handler socket
+                // from the asynchronous state object.
+                StateObject state = (StateObject)ar.AsyncState;
+                Socket handler = state.workSocket;
+                // Read data from the client socket.
+                int bytesRead = handler.EndReceive(ar);
+                if (bytesRead > 0)
                 {
-                    //先拼出消息体长度 
-                    byte[] totalLengthBytes = new byte[4];
-                    if (state.readBufferLength > 0)
+                    //不管是不是第一次接收，只要接收字节总长度小于4
+                    if (state.readBufferLength + bytesRead < 4)
                     {
-                        Array.Copy(state.totalBuffer, 0, totalLengthBytes, 0, state.readBufferLength);
+                        Array.Copy(state.buffer, 0, state.totalBuffer, state.readBufferLength, bytesRead);
+                        state.readBufferLength += bytesRead;
+                        //继续接收
+                        handler.BeginReceive(state.buffer, 0, StateObject.BufferSize, 0, new AsyncCallback(ReadCallback), state);
+                        return;
                     }
-                    int readLength = 4 - state.readBufferLength;
-                    Array.Copy(state.buffer, 0, totalLengthBytes, totalLengthBytes.Length, readLength);
-                    state.totalLength = ByteConvert.Byte2UintEasy(totalLengthBytes);
+
+                    //已读长度如果小于4 要先获取总的消息长度
+                    if (state.readBufferLength < 4)
+                    {
+                        //先拼出消息体长度 
+                        byte[] totalLengthBytes = new byte[4];
+                        if (state.readBufferLength > 0)
+                        {
+                            Array.Copy(state.totalBuffer, 0, totalLengthBytes, 0, state.readBufferLength);
+                        }
+                        int readLength = 4 - state.readBufferLength;
+                        Array.Copy(state.buffer, 0, totalLengthBytes, state.readBufferLength, readLength);
+                        state.totalLength = ByteConvert.Bytes2UInt(totalLengthBytes);
+                        state.totalBuffer = new byte[state.totalLength];
+                    }
+
+                    //还是没读完
+                    if (state.totalLength > state.readBufferLength + bytesRead)
+                    {
+                        Array.Copy(state.buffer, state.readBufferLength, state.totalBuffer, state.readBufferLength, bytesRead);
+                        state.readBufferLength += bytesRead;
+                        //继续接收
+                        handler.BeginReceive(state.buffer, 0, StateObject.BufferSize, 0, new AsyncCallback(ReadCallback), state);
+                        return;
+                    }
+
+                    //已经够读完了
+                    Array.Copy(state.buffer, state.readBufferLength, state.totalBuffer, state.readBufferLength, state.totalLength - state.readBufferLength);
+
+                    Task.Run(() =>
+                    {
+                        Handle(state);
+                    });
+
+                    if (state.readBufferLength + bytesRead > state.totalLength)
+                    {
+                        //这里说明一个完整的消息体接收完了，有可能还会读到下一次的消息体
+                        byte[] newTotalBuffer = new byte[state.readBufferLength + bytesRead - state.totalLength];
+                        Array.Copy(state.totalBuffer, state.totalLength, newTotalBuffer, 0, state.readBufferLength + bytesRead - state.totalLength);
+                        state = new StateObject();
+                        state.workSocket = handler;
+                        state.totalBuffer = newTotalBuffer;
+                        state.readBufferLength = newTotalBuffer.Length;
+                        handler.BeginReceive(state.buffer, 0, StateObject.BufferSize, 0, new AsyncCallback(ReadCallback), state);
+                    }
                 }
 
-                //还是没读完
-                if (state.totalLength > state.readBufferLength + bytesRead)
-                {
-                    Array.Copy(state.buffer, state.readBufferLength, state.totalBuffer, state.readBufferLength, bytesRead);
-                    state.readBufferLength += bytesRead;
-                    //继续接收
-                    handler.BeginReceive(state.buffer, 0, StateObject.BufferSize, 0, new AsyncCallback(ReadCallback), state);
-                    return;
-                }
-
-                //已经够读完了
-                Array.Copy(state.buffer, state.readBufferLength, state.totalBuffer, state.readBufferLength, state.totalLength - state.readBufferLength);
-
-                Task.Run(() =>
-                {
-                    Handle(state);
-                });
-
-                if (state.readBufferLength + bytesRead > state.totalLength)
-                {
-                    //这里说明一个完整的消息体接收完了，有可能还会读到下一次的消息体
-                    byte[] newTotalBuffer = new byte[state.readBufferLength + bytesRead - state.totalLength];
-                    Array.Copy(state.totalBuffer, state.totalLength, newTotalBuffer, 0, state.readBufferLength + bytesRead - state.totalLength);
-                    state = new StateObject();
-                    state.workSocket = handler;
-                    state.totalBuffer = newTotalBuffer;
-                    state.readBufferLength = newTotalBuffer.Length;
-                    handler.BeginReceive(state.buffer, 0, StateObject.BufferSize, 0, new AsyncCallback(ReadCallback), state);
-                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.ToString());
             }
 
         }
@@ -231,11 +244,11 @@ namespace SocketHelper
             //读取话题
             byte[] topicBytes = new byte[4];
             Array.Copy(state.totalBuffer, 4, topicBytes, 0, 4);
-            state.ope = (MsgOperation)ByteConvert.Byte2UintEasy(topicBytes);
+            state.ope = (MsgOperation)ByteConvert.Bytes2UInt(topicBytes);
             //读取消息ID
             byte[] msgIdBytes = new byte[4];
             Array.Copy(state.totalBuffer, 8, msgIdBytes, 0, 4);
-            state.msgId = ByteConvert.Byte2UintEasy(msgIdBytes);
+            state.msgId = ByteConvert.Bytes2UInt(msgIdBytes);
             //读取消息体
             byte[] bodyBytes = new byte[state.totalLength - 12];
             Array.Copy(state.totalBuffer, 12, bodyBytes, 0, state.totalLength - 12);

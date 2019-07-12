@@ -4,6 +4,7 @@ using System.Text;
 
 namespace SocketHelper
 {
+    [Serializable]
     /// <summary>
     /// 发布消息实体
     /// </summary>

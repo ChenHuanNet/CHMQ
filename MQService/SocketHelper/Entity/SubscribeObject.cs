@@ -5,6 +5,7 @@ using System.Text;
 
 namespace SocketHelper
 {
+    [Serializable]
     /// <summary>
     /// 订阅消息体
     /// </summary>

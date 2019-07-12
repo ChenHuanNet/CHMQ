@@ -50,6 +50,13 @@ namespace SocketHelper
                 client.BeginConnect(remoteEP, new AsyncCallback(ConnectCallback), client);
                 connectDone.WaitOne();
                 // Send test data to the remote device.
+
+                PublishObject publishObject = new PublishObject();
+                publishObject.topic = "test";
+                publishObject.content = "test1111";
+
+                Send(client, publishObject, MsgOperation.发布消息);
+
                 // Receive the response from the remote device.
                 Receive(client);
                 // Write the response to the console.

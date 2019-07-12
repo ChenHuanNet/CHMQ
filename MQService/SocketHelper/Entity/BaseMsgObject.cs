@@ -4,6 +4,7 @@ using System.Text;
 
 namespace SocketHelper
 {
+    [Serializable]
     public class BaseMsgObject
     {
         public uint msgId { get; set; }
