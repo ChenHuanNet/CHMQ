@@ -11,12 +11,11 @@ namespace SocketHelper
         public const int BufferSize = 256;
         // Receive buffer.
         public byte[] buffer = new byte[BufferSize];
-        // Received data string.
-        public StringBuilder sb = new StringBuilder();
+
         /// <summary>
         /// 一次完整的请求数据
         /// </summary>
-        public byte[] totalBuffer = new byte[0];
+        public byte[] totalBuffer = new byte[BufferSize];
 
         /// <summary>
         /// 已经读取的长度大小

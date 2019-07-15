@@ -6,7 +6,7 @@ namespace SocketHelper
 {
     [Serializable]
     /// <summary>
-    /// 发布消息实体
+    /// 发布消息体
     /// </summary>
     public class PublishObject
     {

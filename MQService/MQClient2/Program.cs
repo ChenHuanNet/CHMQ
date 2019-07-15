@@ -1,47 +1,38 @@
 ﻿using Newtonsoft.Json;
 using SocketHelper;
 using System;
-using System.Text;
 using System.Threading;
 
-namespace MQClient
+namespace MQClient2
 {
     class Program
     {
         static void Main(string[] args)
         {
-            Console.WriteLine($"This is a Client");
+            Console.WriteLine($"This is a Client2");
 
             AsynchronousClient asynchronousClient = new AsynchronousClient(10000);
             asynchronousClient.msgReceiveEvent += Handle;
             asynchronousClient.StartClient();
 
-            //Subscribe(asynchronousClient);
+            Subscribe(asynchronousClient);
 
-            //Thread.Sleep(200);
-
-            Publish(asynchronousClient);
-
-            //Publish(asynchronousClient);
-
-            //Publish(asynchronousClient);
-
-            while (true)
-            {
-                var input = Console.ReadLine();
-                if (input == "1")
-                {
-                    Subscribe(asynchronousClient);
-                }
-                else if (input == "2")
-                {
-                    Publish(asynchronousClient);
-                }
-                else if (input == "exit")
-                {
-                    break;
-                }
-            }
+            //while (true)
+            //{
+            //    var input = Console.ReadLine();
+            //    if (input == "1")
+            //    {
+            //        Subscribe(asynchronousClient);
+            //    }
+            //    else if (input == "2")
+            //    {
+            //        Publish(asynchronousClient);
+            //    }
+            //    else if (input == "exit")
+            //    {
+            //        break;
+            //    }
+            //}
 
             Console.ReadLine();
         }
@@ -73,6 +64,5 @@ namespace MQClient
             string result = JsonConvert.SerializeObject(obj.body);
             Console.WriteLine(obj.ope.ToString() + ":" + result);
         }
-
     }
 }

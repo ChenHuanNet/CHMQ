@@ -5,9 +5,11 @@ VisualStudioVersion = 16.0.29025.244
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MQServer", "MQServer\MQServer.csproj", "{83CB28EA-2648-4B65-A4B2-BB5526E3E2B4}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SocketHelper", "SocketHelper\SocketHelper.csproj", "{4E0DCAEB-B097-465F-B8E9-7E513B5C282D}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SocketHelper", "SocketHelper\SocketHelper.csproj", "{4E0DCAEB-B097-465F-B8E9-7E513B5C282D}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MQClient", "MQClient\MQClient.csproj", "{E4278E03-236D-472B-B47F-803F48EF0630}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MQClient", "MQClient\MQClient.csproj", "{E4278E03-236D-472B-B47F-803F48EF0630}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MQClient2", "MQClient2\MQClient2.csproj", "{68E216E2-DE06-4A68-88A8-341B4457771F}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -27,6 +29,10 @@ Global
 		{E4278E03-236D-472B-B47F-803F48EF0630}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E4278E03-236D-472B-B47F-803F48EF0630}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{E4278E03-236D-472B-B47F-803F48EF0630}.Release|Any CPU.Build.0 = Release|Any CPU
+		{68E216E2-DE06-4A68-88A8-341B4457771F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{68E216E2-DE06-4A68-88A8-341B4457771F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{68E216E2-DE06-4A68-88A8-341B4457771F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{68E216E2-DE06-4A68-88A8-341B4457771F}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -1,9 +1,11 @@
-﻿using System;
+﻿using Newtonsoft.Json;
+using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace SocketHelper
 {
@@ -29,10 +31,15 @@ namespace SocketHelper
 
         public Socket client;
 
-        public AsynchronousClient(int connectPort, string connectPortIpOrHost = "127.0.0.1")
+        public MsgReceiveEvent msgReceiveEvent;
+
+        public delegate void MsgReceiveEvent(UnPackageObject state);
+
+        public AsynchronousClient(int connectPort, string connectPortIpOrHost = "127.0.0.1", MsgReceiveEvent msgReceiveEvent = null)
         {
             this.port = connectPort;
             this.ipOrHost = connectPortIpOrHost;
+            this.msgReceiveEvent = msgReceiveEvent;
         }
 
         public void StartClient()
@@ -49,16 +56,15 @@ namespace SocketHelper
                 // Connect to the remote endpoint.
                 client.BeginConnect(remoteEP, new AsyncCallback(ConnectCallback), client);
                 connectDone.WaitOne();
-                // Send test data to the remote device.
-
-                PublishObject publishObject = new PublishObject();
-                publishObject.topic = "test";
-                publishObject.content = "test1111";
-
-                Send(client, publishObject, MsgOperation.发布消息);
 
                 // Receive the response from the remote device.
-                Receive(client);
+
+                Task.Run(() =>
+                {
+                    Receive(client);
+                });
+
+
                 // Write the response to the console.
                 Console.WriteLine("Response received : {0}", response);
                 // Release the socket.
@@ -118,24 +124,91 @@ namespace SocketHelper
                 Socket client = state.workSocket;
                 // Read data from the remote device.
                 int bytesRead = client.EndReceive(ar);
+                Console.WriteLine($"[{client.LocalEndPoint.ToString()}]接收到[{bytesRead}]字节数据");
                 if (bytesRead > 0)
                 {
-                    // There might be more data, so store the data received so far.
-                    state.sb.Append(Encoding.ASCII.GetString(state.buffer, 0, bytesRead));
-                    // Get the rest of the data.
-                    client.BeginReceive(state.buffer, 0, StateObject.BufferSize, 0, new AsyncCallback(ReceiveCallback), state);
-                }
-                else
-                {
-                    // All the data has arrived; put it in response.
-                    if (state.sb.Length > 1)
+                    //不管是不是第一次接收，只要接收字节总长度小于4
+                    if (state.readBufferLength + bytesRead < 4)
                     {
-                        response = state.sb.ToString();
+                        Array.Copy(state.buffer, 0, state.totalBuffer, state.readBufferLength, bytesRead);
+                        state.readBufferLength += bytesRead;
+                        //继续接收
+                        state.buffer = new byte[StateObject.BufferSize];
+                        client.BeginReceive(state.buffer, 0, StateObject.BufferSize, 0, new AsyncCallback(ReceiveCallback), state);
+                        return;
                     }
-                    // Signal that all bytes have been received.
+
+                    //已读长度如果小于4 要先获取总的消息长度
+                    if (state.readBufferLength < 4)
+                    {
+                        //先拼出消息体长度 
+                        byte[] totalLengthBytes = new byte[4];
+                        if (state.readBufferLength > 0)
+                        {
+                            Array.Copy(state.totalBuffer, 0, totalLengthBytes, 0, state.readBufferLength);
+                        }
+                        int readLength = 4 - state.readBufferLength;
+                        Array.Copy(state.buffer, 0, totalLengthBytes, state.readBufferLength, readLength);
+                        state.totalLength = ByteConvert.Bytes2UInt(totalLengthBytes);
+                        state.totalBuffer = new byte[state.totalLength];
+                    }
+
+                    //还是没读完
+                    if (state.totalLength > state.readBufferLength + bytesRead)
+                    {
+                        Array.Copy(state.buffer, 0, state.totalBuffer, state.readBufferLength, bytesRead);
+                        state.readBufferLength += bytesRead;
+                        //继续接收
+                        state.buffer = new byte[StateObject.BufferSize];
+                        client.BeginReceive(state.buffer, 0, StateObject.BufferSize, 0, new AsyncCallback(ReceiveCallback), state);
+                        return;
+                    }
+
+                    //已经够读完了
+                    Array.Copy(state.buffer, 0, state.totalBuffer, state.readBufferLength, state.totalLength - state.readBufferLength);
+
+                    Console.WriteLine($"[{client.LocalEndPoint.ToString()}]接收包总长度[{state.totalLength}]字节数据");
+
+                    UnPackageObject unPackageObject = MQPackageHelper.UnPackage(state.totalBuffer);
+
+                    //接收成功事件不为null时触发
+                    if (msgReceiveEvent != null)
+                    {
+                        Task.Run(() =>
+                        {
+                            msgReceiveEvent(unPackageObject);
+                        });
+                    }
+
+                    //接收完完整的一个包，休息200毫秒  间隔太短可能导致实体类的值被覆盖
+                    Thread.Sleep(200);
+
+                    //继续接收这个客户端发来的下一个消息
+                    StateObject nextState = new StateObject();
+                    nextState.workSocket = client;
+                    //当超出当前接收内容时触发
+                    if (state.readBufferLength + bytesRead > state.totalLength)
+                    {
+                        //这里说明一个完整的消息体接收完了，有可能还会读到下一次的消息体
+                        byte[] newTotalBuffer = new byte[state.readBufferLength + bytesRead - state.totalLength];
+                        Array.Copy(state.buffer, state.totalLength - state.readBufferLength, newTotalBuffer, 0, state.readBufferLength + bytesRead - state.totalLength);
+                        //要重新建一个对象，不然会影响到异步执行后续处理方法
+                        nextState.readBufferLength = newTotalBuffer.Length;
+                        if (nextState.readBufferLength >= 4)
+                        {
+                            //拼出消息体长度 
+                            byte[] totalLengthBytes = new byte[4];
+                            Array.Copy(newTotalBuffer, 0, totalLengthBytes, 0, 4);
+                            nextState.totalLength = ByteConvert.Bytes2UInt(totalLengthBytes);
+                            nextState.totalBuffer = new byte[nextState.totalLength];
+                        }
+                        Array.Copy(newTotalBuffer, 0, nextState.totalBuffer, 0, nextState.readBufferLength);
+                    }
+
+                    client.BeginReceive(nextState.buffer, 0, StateObject.BufferSize, 0, new AsyncCallback(ReceiveCallback), nextState);
+
                     receiveDone.Set();
                 }
-
             }
             catch (Exception e)
             {
@@ -144,10 +217,6 @@ namespace SocketHelper
         }
         public void Send(Socket client, object data, MsgOperation msgOperation)
         {
-            byte[] byteData = ByteConvert.ObjToByte(data);
-
-            byte[] sendData = new byte[12 + byteData.Length];
-            uint totalLength = (uint)(12 + byteData.Length);
             try
             {
                 if (_msgId >= uint.MaxValue)
@@ -160,15 +229,10 @@ namespace SocketHelper
             {
                 _msgId = uint.MinValue;
             }
-
             uint msgId = _msgId;
-            Array.Copy(ByteConvert.UInt2Bytes(totalLength), 0, sendData, 0, 4);
-            Array.Copy(ByteConvert.UInt2Bytes(msgId), 0, sendData, 4, 4);
-            Array.Copy(ByteConvert.UInt2Bytes((uint)msgOperation), 0, sendData, 8, 4);
-            Array.Copy(byteData, 0, sendData, 12, byteData.Length);
+            byte[] sendData = MQPackageHelper.GetPackage(data, msgId, msgOperation);
 
-            // Begin sending the data to the remote device.
-            client.BeginSend(byteData, 0, byteData.Length, 0, new AsyncCallback(SendCallback), client);
+            client.BeginSend(sendData, 0, sendData.Length, 0, new AsyncCallback(SendCallback), client);
 
             sendDone.WaitOne();
         }
@@ -192,6 +256,8 @@ namespace SocketHelper
                 Console.WriteLine(e.ToString());
             }
         }
+
+
 
     }
 }
