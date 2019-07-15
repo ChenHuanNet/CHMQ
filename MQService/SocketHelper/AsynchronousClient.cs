@@ -215,7 +215,7 @@ namespace SocketHelper
                 Console.WriteLine(e.ToString());
             }
         }
-        public void Send(Socket client, object data, MsgOperation msgOperation)
+        public void Send(object data, MsgOperation msgOperation)
         {
             try
             {

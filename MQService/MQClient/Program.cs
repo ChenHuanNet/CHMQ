@@ -51,7 +51,7 @@ namespace MQClient
             SubscribeObject subscribeObject = new SubscribeObject();
             subscribeObject.topic = "test";
             Console.WriteLine($"我订阅了主题[{subscribeObject.topic}]");
-            asynchronousClient.Send(asynchronousClient.client, subscribeObject, MsgOperation.订阅消息);
+            asynchronousClient.Send(subscribeObject, MsgOperation.订阅消息);
 
         }
 
@@ -61,7 +61,7 @@ namespace MQClient
             publishObject.topic = "test";
             publishObject.content = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + new Random().Next(999).ToString();
             Console.WriteLine($"我在主题[{publishObject.topic}]发布了一条消息:{publishObject.content}");
-            asynchronousClient.Send(asynchronousClient.client, publishObject, MsgOperation.发布消息);
+            asynchronousClient.Send(publishObject, MsgOperation.发布消息);
         }
 
         /// <summary>
