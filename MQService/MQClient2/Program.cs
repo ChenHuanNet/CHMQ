@@ -52,7 +52,7 @@ namespace MQClient2
             publishObject.topic = "test";
             publishObject.content = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + new Random().Next(999).ToString();
             Console.WriteLine($"我在主题[{publishObject.topic}]发布了一条消息:{publishObject.content}");
-            asynchronousClient.Send(publishObject, MsgOperation.发布消息);
+            asynchronousClient.Send(publishObject, MsgOperation.发布广播);
         }
 
         /// <summary>

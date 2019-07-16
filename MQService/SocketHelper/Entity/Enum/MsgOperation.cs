@@ -7,7 +7,8 @@ namespace SocketHelper
     public enum MsgOperation : uint
     {
         未知 = 0,
-        发布消息 = 1,
+        发布广播 = 1,//会被所有订阅消费
+        发布消息,//只有一个订阅者消费
         订阅消息Socket方式,
         订阅消息Http方式,
         回复消息

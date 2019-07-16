@@ -243,7 +243,7 @@ namespace SocketHelper
                 errmsg = "";
                 switch (msgOperation)
                 {
-                    case MsgOperation.发布消息:
+                    case MsgOperation.发布广播:
                         t = JsonConvert.DeserializeObject<PublishObject>(json);
                         break;
                     case MsgOperation.订阅消息Http方式:

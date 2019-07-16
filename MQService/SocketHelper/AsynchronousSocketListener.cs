@@ -290,7 +290,7 @@ namespace SocketHelper
                 {
                     switch (result.ope)
                     {
-                        case MsgOperation.发布消息:
+                        case MsgOperation.发布广播:
                             PublishObject publishObject = (PublishObject)result.body;
                             Task.Run(() =>
                             {
@@ -302,6 +302,8 @@ namespace SocketHelper
                                     {
                                         Send(socket, publishObject.content, MsgOperation.回复消息);
                                     }
+
+                                    subscribeListSocket[publishObject.topic].TryTake(out Socket ss);
                                 }
 
                                 if (subscribeListHttp.ContainsKey(publishObject.topic))
