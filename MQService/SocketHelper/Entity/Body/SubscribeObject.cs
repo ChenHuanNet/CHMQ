@@ -15,5 +15,11 @@ namespace SocketHelper
         /// 订阅的消息标题
         /// </summary>
         public string topic { get; set; }
+
+        /// <summary>
+        /// Http方式下使用
+        /// </summary>
+        public string notifyUrl { get; set; }
+
     }
 }

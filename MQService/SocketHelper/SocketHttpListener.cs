@@ -17,18 +17,18 @@ namespace SocketHelper
         {
             _socket.Bind(new IPEndPoint(IPAddress.Any, port));
             _socket.Listen(1000);
+
+            //连接转发的socket服务端
+            asynchronousClient = new AsynchronousClient(10000);
+            asynchronousClient.msgReceiveEvent += Handle;
+        }
+
+        public void Start()
+        {
             _socket.BeginAccept(new AsyncCallback(OnAccept), _socket);  //开始接收来自浏览器的http请求（其实是socket连接请求）
             Console.WriteLine("Socket Web Server 已启动监听！" + Environment.NewLine + "  监听端口：" + ((IPEndPoint)_socket.LocalEndPoint).Port);
 
-
-            ////连接转发的socket服务端
-            //asynchronousClient = new AsynchronousClient(10000);
-            //asynchronousClient.msgReceiveEvent += Handle;
-            //asynchronousClient.StartClient();
-
-
-
-            Console.ReadKey();
+            asynchronousClient.StartClient();
         }
 
         /// <summary>
@@ -66,7 +66,10 @@ namespace SocketHelper
                     //转发给socket
                     Task.Run(() =>
                     {
-                        asynchronousClient.Send(json, ope);
+                        if (asynchronousClient != null)
+                        {
+                            asynchronousClient.Send(json, ope);
+                        }
                     });
                 }
                 //byte[] cont = pageHandle(RouteHandle(recv_request));
@@ -145,7 +148,10 @@ namespace SocketHelper
                         isStart = true;
                         continue;
                     }
-                    sb.Append(item);
+                    if (isStart)
+                    {
+                        sb.Append(item);
+                    }
                 }
             }
 
@@ -154,23 +160,14 @@ namespace SocketHelper
                 errmsg = "请传入请求的JSON";
             }
 
-            object t;
-            try
-            {
-                t = JsonConvert.DeserializeObject(sb.ToString());
-                errmsg = "";
-            }
-            catch (Exception ex)
-            {
-                errmsg = $"JSON解析异常,ex:{ex}";
-                t = null;
-            }
-
             if (msgOperation == MsgOperation.未知)
             {
                 errmsg = "请传入正确的操作类型";
             }
- 
+
+
+            object t = GetObjectT(sb.ToString(), msgOperation, out errmsg);
+
             return t;
         }
 
@@ -237,6 +234,36 @@ namespace SocketHelper
             return param;
         }
 
+
+        object GetObjectT(string json, MsgOperation msgOperation, out string errmsg)
+        {
+            object t = null;
+            try
+            {
+                errmsg = "";
+                switch (msgOperation)
+                {
+                    case MsgOperation.发布消息:
+                        t = JsonConvert.DeserializeObject<PublishObject>(json);
+                        break;
+                    case MsgOperation.订阅消息Http方式:
+                        SubscribeObject subscribe = JsonConvert.DeserializeObject<SubscribeObject>(json);
+                        if (string.IsNullOrEmpty(subscribe.notifyUrl))
+                        {
+                            errmsg = "订阅消息Http方式,请传入异步通知地址notifyUrl";
+                        }
+                        t = subscribe;
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                errmsg = $"JSON解析失败,json:[{json}]";
+            }
+
+
+            return t;
+        }
 
         void Handle(UnPackageObject obj)
         {

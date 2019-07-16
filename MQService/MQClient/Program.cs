@@ -51,7 +51,7 @@ namespace MQClient
             SubscribeObject subscribeObject = new SubscribeObject();
             subscribeObject.topic = "test";
             Console.WriteLine($"我订阅了主题[{subscribeObject.topic}]");
-            asynchronousClient.Send(subscribeObject, MsgOperation.订阅消息);
+            asynchronousClient.Send(subscribeObject, MsgOperation.订阅消息Socket方式);
 
         }
 

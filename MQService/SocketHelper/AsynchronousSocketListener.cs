@@ -5,6 +5,8 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
@@ -31,9 +33,14 @@ namespace SocketHelper
         ConcurrentQueue<OperateObject> taskQueue;
 
         /// <summary>
-        /// 订阅对象
+        /// socket订阅对象
         /// </summary>
-        ConcurrentDictionary<string, ConcurrentBag<Socket>> subscribeList = new ConcurrentDictionary<string, ConcurrentBag<Socket>>();
+        ConcurrentDictionary<string, ConcurrentBag<Socket>> subscribeListSocket = new ConcurrentDictionary<string, ConcurrentBag<Socket>>();
+
+        /// <summary>
+        /// http订阅对象
+        /// </summary>
+        ConcurrentDictionary<string, ConcurrentBag<string>> subscribeListHttp = new ConcurrentDictionary<string, ConcurrentBag<string>>();
 
         #endregion
 
@@ -288,39 +295,80 @@ namespace SocketHelper
                             Task.Run(() =>
                             {
                                 //订阅者中有人关注这个话题 就向订阅者发送消息
-                                if (subscribeList.ContainsKey(publishObject.topic))
+                                if (subscribeListSocket.ContainsKey(publishObject.topic))
                                 {
-                                    Console.WriteLine($"准备发布消息给订阅者,订阅数:{subscribeList[publishObject.topic].Count}");
-                                    foreach (var socket in subscribeList[publishObject.topic])
+                                    Console.WriteLine($"准备发布消息给Socket订阅者,订阅数:{subscribeListSocket[publishObject.topic].Count}");
+                                    foreach (var socket in subscribeListSocket[publishObject.topic])
                                     {
                                         Send(socket, publishObject.content, MsgOperation.回复消息);
                                     }
                                 }
 
+                                if (subscribeListHttp.ContainsKey(publishObject.topic))
+                                {
+                                    Console.WriteLine($"准备发布消息给Http订阅者,订阅数:{subscribeListHttp[publishObject.topic].Count}");
+                                    foreach (string notifyUrl in subscribeListHttp[publishObject.topic])
+                                    {
+                                        string resp = HttpHelper.PostJsonData(notifyUrl, JsonConvert.SerializeObject(publishObject.content)).Result;
+                                    }
+                                }
                             });
                             break;
-                        case MsgOperation.订阅消息:
-                            int failcount = 3;
-                            SubscribeObject subscribeObject = (SubscribeObject)result.body;
-                        trySubscribeAgain:
-                            if (subscribeList.ContainsKey(subscribeObject.topic))
+                        case MsgOperation.订阅消息Socket方式:
                             {
-                                if (!subscribeList[subscribeObject.topic].Contains(result.workSocket))
+                                int failcount = 3;
+                                SubscribeObject subscribeObject = (SubscribeObject)result.body;
+                            trySubscribeSocketAgain:
+                                if (subscribeListSocket.ContainsKey(subscribeObject.topic))
                                 {
-                                    subscribeList[subscribeObject.topic].Add(result.workSocket);
+                                    if (!subscribeListSocket[subscribeObject.topic].Contains(result.workSocket))
+                                    {
+                                        subscribeListSocket[subscribeObject.topic].Add(result.workSocket);
+                                    }
+                                }
+                                else
+                                {
+                                    bool success = subscribeListSocket.TryAdd(subscribeObject.topic, new ConcurrentBag<Socket>() { result.workSocket });
+                                    if (!success)
+                                    {
+                                        failcount++;
+                                        if (failcount > 3)
+                                        {
+                                            break;
+                                        }
+                                        goto trySubscribeSocketAgain;
+                                    }
                                 }
                             }
-                            else
+                            break;
+                        case MsgOperation.订阅消息Http方式:
                             {
-                                bool success = subscribeList.TryAdd(subscribeObject.topic, new ConcurrentBag<Socket>() { result.workSocket });
-                                if (!success)
+                                int failcount = 3;
+                                SubscribeObject subscribeObject = (SubscribeObject)result.body;
+                                if (string.IsNullOrEmpty(subscribeObject.notifyUrl))
                                 {
-                                    failcount++;
-                                    if (failcount > 3)
+                                    break;
+                                }
+                            trySubscribeHttpAgain:
+                                if (subscribeListHttp.ContainsKey(subscribeObject.topic))
+                                {
+                                    if (!subscribeListHttp[subscribeObject.topic].Contains(subscribeObject.notifyUrl))
                                     {
-                                        break;
+                                        subscribeListHttp[subscribeObject.topic].Add(subscribeObject.notifyUrl);
                                     }
-                                    goto trySubscribeAgain;
+                                }
+                                else
+                                {
+                                    bool success = subscribeListHttp.TryAdd(subscribeObject.topic, new ConcurrentBag<string>() { subscribeObject.notifyUrl });
+                                    if (!success)
+                                    {
+                                        failcount++;
+                                        if (failcount > 3)
+                                        {
+                                            break;
+                                        }
+                                        goto trySubscribeHttpAgain;
+                                    }
                                 }
                             }
                             break;

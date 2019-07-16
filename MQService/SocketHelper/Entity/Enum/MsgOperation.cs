@@ -8,7 +8,8 @@ namespace SocketHelper
     {
         未知 = 0,
         发布消息 = 1,
-        订阅消息,
+        订阅消息Socket方式,
+        订阅消息Http方式,
         回复消息
     }
 }
