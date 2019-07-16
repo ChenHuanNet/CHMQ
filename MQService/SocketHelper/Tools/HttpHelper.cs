@@ -26,7 +26,7 @@ namespace SocketHelper
             try
             {
                 var task = httpClient.PostAsync(url, httpContent).ConfigureAwait(false);
-                //一直显示无效的 时间戳  尚未联调
+
                 response = await task.GetAwaiter().GetResult().Content.ReadAsStringAsync();
             }
             catch (TaskCanceledException ex)
