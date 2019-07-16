@@ -35,12 +35,12 @@ namespace SocketHelper
         /// <summary>
         /// socket订阅对象
         /// </summary>
-        ConcurrentDictionary<string, ConcurrentBag<Socket>> subscribeListSocket = new ConcurrentDictionary<string, ConcurrentBag<Socket>>();
+        ConcurrentDictionary<string, ConcurrentQueue<Socket>> subscribeListSocket = new ConcurrentDictionary<string, ConcurrentQueue<Socket>>();
 
         /// <summary>
         /// http订阅对象
         /// </summary>
-        ConcurrentDictionary<string, ConcurrentBag<string>> subscribeListHttp = new ConcurrentDictionary<string, ConcurrentBag<string>>();
+        ConcurrentDictionary<string, ConcurrentQueue<string>> subscribeListHttp = new ConcurrentDictionary<string, ConcurrentQueue<string>>();
 
         #endregion
 
@@ -291,30 +291,55 @@ namespace SocketHelper
                     switch (result.ope)
                     {
                         case MsgOperation.发布广播:
-                            PublishObject publishObject = (PublishObject)result.body;
-                            Task.Run(() =>
                             {
-                                //订阅者中有人关注这个话题 就向订阅者发送消息
-                                if (subscribeListSocket.ContainsKey(publishObject.topic))
+                                PublishObject publishObject = (PublishObject)result.body;
+                                Task.Run(() =>
                                 {
-                                    Console.WriteLine($"准备发布消息给Socket订阅者,订阅数:{subscribeListSocket[publishObject.topic].Count}");
-                                    foreach (var socket in subscribeListSocket[publishObject.topic])
+                                    //订阅者中有人关注这个话题 就向订阅者发送消息
+                                    if (subscribeListSocket.ContainsKey(publishObject.topic))
                                     {
+                                        Console.WriteLine($"准备发布消息给Socket订阅者,订阅数:{subscribeListSocket[publishObject.topic].Count}");
+                                        foreach (var socket in subscribeListSocket[publishObject.topic])
+                                        {
+                                            Send(socket, publishObject.content, MsgOperation.回复消息);
+                                        }
+                                    }
+
+                                    if (subscribeListHttp.ContainsKey(publishObject.topic))
+                                    {
+                                        Console.WriteLine($"准备发布消息给Http订阅者,订阅数:{subscribeListHttp[publishObject.topic].Count}");
+                                        foreach (string notifyUrl in subscribeListHttp[publishObject.topic])
+                                        {
+                                            string resp = HttpHelper.PostJsonData(notifyUrl, JsonConvert.SerializeObject(publishObject.content)).Result;
+                                        }
+                                    }
+                                });
+                            }
+                            break;
+                        case MsgOperation.发布消息: //目前采用的时候轮询模式,一个个按顺序发
+                            {
+                                PublishObject publishObject = (PublishObject)result.body;
+                                Task.Run(() =>
+                                {
+                                    //订阅者中有人关注这个话题 就向订阅者发送消息
+                                    if (subscribeListSocket.ContainsKey(publishObject.topic) && subscribeListSocket[publishObject.topic].Count > 0)
+                                    {
+                                        //轮询发
+                                        Console.WriteLine($"准备发布消息给Socket订阅者,订阅数:{subscribeListSocket[publishObject.topic].Count}");
+                                        subscribeListSocket[publishObject.topic].TryDequeue(out Socket socket);//头部取出来
                                         Send(socket, publishObject.content, MsgOperation.回复消息);
+                                        subscribeListSocket[publishObject.topic].Enqueue(socket);//加入到尾部去
                                     }
 
-                                    subscribeListSocket[publishObject.topic].TryTake(out Socket ss);
-                                }
-
-                                if (subscribeListHttp.ContainsKey(publishObject.topic))
-                                {
-                                    Console.WriteLine($"准备发布消息给Http订阅者,订阅数:{subscribeListHttp[publishObject.topic].Count}");
-                                    foreach (string notifyUrl in subscribeListHttp[publishObject.topic])
+                                    if (subscribeListHttp.ContainsKey(publishObject.topic))
                                     {
+                                        Console.WriteLine($"准备发布消息给Http订阅者,订阅数:{subscribeListHttp[publishObject.topic].Count}");
+                                        subscribeListHttp[publishObject.topic].TryDequeue(out string notifyUrl);//头部取出来
                                         string resp = HttpHelper.PostJsonData(notifyUrl, JsonConvert.SerializeObject(publishObject.content)).Result;
+                                        subscribeListHttp[publishObject.topic].Enqueue(notifyUrl);//加入到尾部去  
                                     }
-                                }
-                            });
+                                });
+                            }
                             break;
                         case MsgOperation.订阅消息Socket方式:
                             {
@@ -325,12 +350,14 @@ namespace SocketHelper
                                 {
                                     if (!subscribeListSocket[subscribeObject.topic].Contains(result.workSocket))
                                     {
-                                        subscribeListSocket[subscribeObject.topic].Add(result.workSocket);
+                                        subscribeListSocket[subscribeObject.topic].Enqueue(result.workSocket);
                                     }
                                 }
                                 else
                                 {
-                                    bool success = subscribeListSocket.TryAdd(subscribeObject.topic, new ConcurrentBag<Socket>() { result.workSocket });
+                                    ConcurrentQueue<Socket> _cache = new ConcurrentQueue<Socket>();
+                                    _cache.Enqueue(result.workSocket);
+                                    bool success = subscribeListSocket.TryAdd(subscribeObject.topic, _cache);
                                     if (!success)
                                     {
                                         failcount++;
@@ -356,12 +383,14 @@ namespace SocketHelper
                                 {
                                     if (!subscribeListHttp[subscribeObject.topic].Contains(subscribeObject.notifyUrl))
                                     {
-                                        subscribeListHttp[subscribeObject.topic].Add(subscribeObject.notifyUrl);
+                                        subscribeListHttp[subscribeObject.topic].Enqueue(subscribeObject.notifyUrl);
                                     }
                                 }
                                 else
                                 {
-                                    bool success = subscribeListHttp.TryAdd(subscribeObject.topic, new ConcurrentBag<string>() { subscribeObject.notifyUrl });
+                                    ConcurrentQueue<string> _cache = new ConcurrentQueue<string>();
+                                    _cache.Enqueue(subscribeObject.notifyUrl);
+                                    bool success = subscribeListHttp.TryAdd(subscribeObject.topic, _cache);
                                     if (!success)
                                     {
                                         failcount++;
