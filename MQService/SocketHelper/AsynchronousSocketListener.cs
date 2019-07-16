@@ -328,7 +328,10 @@ namespace SocketHelper
                                         Console.WriteLine($"准备发布消息给Socket订阅者,订阅数:{subscribeListSocket[publishObject.topic].Count}");
                                         subscribeListSocket[publishObject.topic].TryDequeue(out Socket socket);//头部取出来
                                         Send(socket, publishObject.content, MsgOperation.回复消息);
-                                        subscribeListSocket[publishObject.topic].Enqueue(socket);//加入到尾部去
+                                        if (!subscribeListSocket[publishObject.topic].Contains(socket))
+                                        {
+                                            subscribeListSocket[publishObject.topic].Enqueue(socket);//加入到尾部去
+                                        }      
                                     }
 
                                     if (subscribeListHttp.ContainsKey(publishObject.topic))
@@ -336,7 +339,10 @@ namespace SocketHelper
                                         Console.WriteLine($"准备发布消息给Http订阅者,订阅数:{subscribeListHttp[publishObject.topic].Count}");
                                         subscribeListHttp[publishObject.topic].TryDequeue(out string notifyUrl);//头部取出来
                                         string resp = HttpHelper.PostJsonData(notifyUrl, JsonConvert.SerializeObject(publishObject.content)).Result;
-                                        subscribeListHttp[publishObject.topic].Enqueue(notifyUrl);//加入到尾部去  
+                                        if (!subscribeListHttp[publishObject.topic].Contains(notifyUrl))
+                                        {
+                                            subscribeListHttp[publishObject.topic].Enqueue(notifyUrl);//加入到尾部去  
+                                        }
                                     }
                                 });
                             }
