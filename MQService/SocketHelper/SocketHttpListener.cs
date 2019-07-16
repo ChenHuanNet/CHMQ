@@ -16,7 +16,7 @@ namespace SocketHelper
         public SocketHttpListener(int port)
         {
             _socket.Bind(new IPEndPoint(IPAddress.Any, port));
-            _socket.Listen(1000);
+            _socket.Listen(10000);
 
             //连接转发的socket服务端
             asynchronousClient = new AsynchronousClient(10000);
