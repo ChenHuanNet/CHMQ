@@ -445,6 +445,7 @@ namespace SocketHelper
                                 }
                             }
                             break;
+                        //没有主题或者没消息暂时先不通知客户端
                         case MsgOperation.客户端主动拉取消息:
                             {
                                 SubscribeObject subscribeObject = (SubscribeObject)result.body;
@@ -480,21 +481,35 @@ namespace SocketHelper
                                             }
                                         }
                                     }
-                                    else
-                                    {
-                                        BaseMsgObject baseMsgObject = new BaseMsgObject();
-                                        baseMsgObject.code = -1;
-                                        baseMsgObject.message = $"不存在{subscribeObject.topic}主题";
-                                        if (string.IsNullOrEmpty(subscribeObject.notifyUrl))
-                                        { 
-                                            Send(result.workSocket, baseMsgObject, MsgOperation.回复消息);
-                                        }
-                                        else
-                                        {
-                                            var resp = HttpHelper.PostJsonData(subscribeObject.notifyUrl, JsonConvert.SerializeObject(baseMsgObject)).Result;
-                                        }
-                                    }
+                                    //else
+                                    //{
+                                    //    BaseMsgObject baseMsgObject = new BaseMsgObject();
+                                    //    baseMsgObject.code = -1;
+                                    //    baseMsgObject.message = $"当前主题没有消息";
+                                    //    if (string.IsNullOrEmpty(subscribeObject.notifyUrl))
+                                    //    {
+                                    //        Send(result.workSocket, baseMsgObject, MsgOperation.回复消息);
+                                    //    }
+                                    //    else
+                                    //    {
+                                    //        var resp = HttpHelper.PostJsonData(subscribeObject.notifyUrl, JsonConvert.SerializeObject(baseMsgObject)).Result;
+                                    //    }
+                                    //}
                                 }
+                                //else
+                                //{
+                                //    BaseMsgObject baseMsgObject = new BaseMsgObject();
+                                //    baseMsgObject.code = -1;
+                                //    baseMsgObject.message = $"不存在{subscribeObject.topic}主题";
+                                //    if (string.IsNullOrEmpty(subscribeObject.notifyUrl))
+                                //    {
+                                //        Send(result.workSocket, baseMsgObject, MsgOperation.回复消息);
+                                //    }
+                                //    else
+                                //    {
+                                //        var resp = HttpHelper.PostJsonData(subscribeObject.notifyUrl, JsonConvert.SerializeObject(baseMsgObject)).Result;
+                                //    }
+                                //}
                             }
                             break;
                         default:
