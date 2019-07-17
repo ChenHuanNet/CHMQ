@@ -299,19 +299,21 @@ namespace SocketHelper
                                     if (subscribeListSocket.ContainsKey(publishObject.topic))
                                     {
                                         Console.WriteLine($"准备发布消息给Socket订阅者,订阅数:{subscribeListSocket[publishObject.topic].Count}");
-                                        foreach (var socket in subscribeListSocket[publishObject.topic])
+                                        //并行执行,任务开销大的时候效率高于单纯的for循环
+                                        Parallel.ForEach(subscribeListSocket[publishObject.topic], (socket) =>
                                         {
                                             Send(socket, publishObject.content, MsgOperation.回复消息);
-                                        }
+                                        });
                                     }
 
                                     if (subscribeListHttp.ContainsKey(publishObject.topic))
                                     {
                                         Console.WriteLine($"准备发布消息给Http订阅者,订阅数:{subscribeListHttp[publishObject.topic].Count}");
-                                        foreach (string notifyUrl in subscribeListHttp[publishObject.topic])
+                                        //并行执行,任务开销大的时候效率高于单纯的for循环
+                                        Parallel.ForEach(subscribeListHttp[publishObject.topic], (notifyUrl) =>
                                         {
                                             string resp = HttpHelper.PostJsonData(notifyUrl, JsonConvert.SerializeObject(publishObject.content)).Result;
-                                        }
+                                        });
                                     }
                                 });
                             }
@@ -331,7 +333,7 @@ namespace SocketHelper
                                         if (!subscribeListSocket[publishObject.topic].Contains(socket))
                                         {
                                             subscribeListSocket[publishObject.topic].Enqueue(socket);//加入到尾部去
-                                        }      
+                                        }
                                     }
 
                                     if (subscribeListHttp.ContainsKey(publishObject.topic))
