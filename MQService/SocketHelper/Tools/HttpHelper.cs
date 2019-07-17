@@ -17,7 +17,7 @@ namespace SocketHelper
             //发送Http消息
             var handler = new HttpClientHandler() { AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate };
             HttpClient httpClient = new HttpClient(handler);
-            httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            //httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json")); //接收不一定要JSON格式
             httpClient.Timeout = new TimeSpan(0, 0, 30);
 
             HttpContent httpContent = new StringContent(json);

@@ -13,6 +13,7 @@ namespace SocketHelper
         订阅消息Socket方式,
         订阅消息Http方式,
         客户端主动拉取消息,//对应的[发布消息存消息队列]
+        取消订阅,
         回复消息
     }
 }

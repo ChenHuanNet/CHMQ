@@ -17,6 +17,10 @@ namespace MQClient2
 
             Subscribe(asynchronousClient);
 
+            Thread.Sleep(3000);
+
+            DisSubscribe(asynchronousClient);
+
             //while (true)
             //{
             //    var input = Console.ReadLine();
@@ -43,6 +47,15 @@ namespace MQClient2
             subscribeObject.topic = "test";
             Console.WriteLine($"我订阅了主题[{subscribeObject.topic}]");
             asynchronousClient.Send(subscribeObject, MsgOperation.订阅消息Socket方式);
+
+        }
+
+        private static void DisSubscribe(AsynchronousClient asynchronousClient)
+        {
+            SubscribeObject subscribeObject = new SubscribeObject();
+            subscribeObject.topic = "test";
+            Console.WriteLine($"我订阅了主题[{subscribeObject.topic}]");
+            asynchronousClient.Send(subscribeObject, MsgOperation.取消订阅);
 
         }
 

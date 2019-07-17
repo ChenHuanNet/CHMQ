@@ -20,7 +20,7 @@ namespace MQClient
 
             //Thread.Sleep(200);
 
-            Publish(asynchronousClient);
+            // Publish(asynchronousClient);
 
             //Publish(asynchronousClient);
 

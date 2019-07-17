@@ -126,13 +126,14 @@ namespace SocketHelper
 
         private void ReadCallback(IAsyncResult ar)
         {
+            Socket handler = null;
             try
             {
 
                 // Retrieve the state object and the handler socket
                 // from the asynchronous state object.
                 StateObject state = (StateObject)ar.AsyncState;
-                Socket handler = state.workSocket;
+                handler = state.workSocket;
                 // Read data from the client socket.
                 int bytesRead = handler.EndReceive(ar);
                 if (bytesRead > 0)
@@ -209,9 +210,23 @@ namespace SocketHelper
 
 
             }
-            catch (Exception ex)
+            catch (SocketException ex)
             {
                 Console.WriteLine(ex.ToString());
+                if (ex.ErrorCode == 10054)//断开连接了
+                {
+                    if (handler == null)
+                    {
+                        return;
+                    }
+                    Task.Run(() =>
+                    {
+                        foreach (var item in subscribeListSocket)
+                        {
+                            QueueHelper.Remove(ref subscribeListSocket, item.Key, handler);
+                        }
+                    });
+                }
             }
 
         }
@@ -308,7 +323,10 @@ namespace SocketHelper
                                         //并行执行,任务开销大的时候效率高于单纯的for循环
                                         Parallel.ForEach(subscribeListSocket[publishObject.topic], (socket) =>
                                         {
-                                            Send(socket, publishObject.content, MsgOperation.回复消息);
+                                            if (socket != null && socket.Connected)
+                                            {
+                                                Send(socket, publishObject.content, MsgOperation.发布广播);
+                                            }
                                         });
                                     }
 
@@ -324,7 +342,7 @@ namespace SocketHelper
                                 });
                             }
                             break;
-                        //采用得是服务端主动[推]的轮询模式,一个个按顺序发   
+                        //采用得是服务端主动[推]的轮询模式,一个个按顺序发   不推荐使用  客户端主动拉比较好
                         case MsgOperation.发布消息:
                             {
                                 PublishObject publishObject = (PublishObject)result.body;
@@ -335,19 +353,31 @@ namespace SocketHelper
                                     {
                                         //轮询发
                                         Console.WriteLine($"准备发布消息给Socket订阅者,订阅数:{subscribeListSocket[publishObject.topic].Count}");
+                                    tryTakeSocketAgain:
                                         subscribeListSocket[publishObject.topic].TryDequeue(out Socket socket);//头部取出来
-                                        Send(socket, publishObject.content, MsgOperation.回复消息);
+                                        if (socket == null || !socket.Connected)
+                                        {
+                                            QueueHelper.Remove(ref subscribeListSocket, publishObject.topic, socket);
+                                            goto tryTakeSocketAgain;
+                                        }
+                                        Send(socket, publishObject.content, MsgOperation.发布消息);
                                         if (!subscribeListSocket[publishObject.topic].Contains(socket))
                                         {
                                             subscribeListSocket[publishObject.topic].Enqueue(socket);//加入到尾部去
                                         }
                                     }
 
-                                    if (subscribeListHttp.ContainsKey(publishObject.topic))
+                                    if (subscribeListHttp.ContainsKey(publishObject.topic) && subscribeListHttp[publishObject.topic].Count > 0)
                                     {
                                         Console.WriteLine($"准备发布消息给Http订阅者,订阅数:{subscribeListHttp[publishObject.topic].Count}");
+                                    tryTakeHttpAgain:
                                         subscribeListHttp[publishObject.topic].TryDequeue(out string notifyUrl);//头部取出来
                                         string resp = HttpHelper.PostJsonData(notifyUrl, JsonConvert.SerializeObject(publishObject.content)).Result;
+                                        if (resp == null || resp.ToUpper() != "SUCCESS")
+                                        {
+                                            QueueHelper.Remove(ref subscribeListHttp, publishObject.topic, notifyUrl);
+                                            goto tryTakeHttpAgain;
+                                        }
                                         if (!subscribeListHttp[publishObject.topic].Contains(notifyUrl))
                                         {
                                             subscribeListHttp[publishObject.topic].Enqueue(notifyUrl);//加入到尾部去  
@@ -460,7 +490,7 @@ namespace SocketHelper
                                             bool isGet = publishMsgList[subscribeObject.topic].TryDequeue(out object data);
                                             if (isGet)
                                             {
-                                                Send(result.workSocket, data, MsgOperation.回复消息);
+                                                Send(result.workSocket, data, MsgOperation.客户端主动拉取消息);
                                             }
                                             else
                                             {
@@ -481,35 +511,27 @@ namespace SocketHelper
                                             }
                                         }
                                     }
-                                    //else
-                                    //{
-                                    //    BaseMsgObject baseMsgObject = new BaseMsgObject();
-                                    //    baseMsgObject.code = -1;
-                                    //    baseMsgObject.message = $"当前主题没有消息";
-                                    //    if (string.IsNullOrEmpty(subscribeObject.notifyUrl))
-                                    //    {
-                                    //        Send(result.workSocket, baseMsgObject, MsgOperation.回复消息);
-                                    //    }
-                                    //    else
-                                    //    {
-                                    //        var resp = HttpHelper.PostJsonData(subscribeObject.notifyUrl, JsonConvert.SerializeObject(baseMsgObject)).Result;
-                                    //    }
-                                    //}
                                 }
-                                //else
-                                //{
-                                //    BaseMsgObject baseMsgObject = new BaseMsgObject();
-                                //    baseMsgObject.code = -1;
-                                //    baseMsgObject.message = $"不存在{subscribeObject.topic}主题";
-                                //    if (string.IsNullOrEmpty(subscribeObject.notifyUrl))
-                                //    {
-                                //        Send(result.workSocket, baseMsgObject, MsgOperation.回复消息);
-                                //    }
-                                //    else
-                                //    {
-                                //        var resp = HttpHelper.PostJsonData(subscribeObject.notifyUrl, JsonConvert.SerializeObject(baseMsgObject)).Result;
-                                //    }
-                                //}
+                            }
+                            break;
+                        case MsgOperation.取消订阅:
+                            {
+                                SubscribeObject subscribeObject = (SubscribeObject)result.body;
+                                if (subscribeListSocket.ContainsKey(subscribeObject.topic) && subscribeListSocket[subscribeObject.topic].Contains(result.workSocket))
+                                {
+                                    Task.Run(() =>
+                                    {
+                                        QueueHelper.Remove(ref subscribeListSocket, subscribeObject.topic, result.workSocket);
+                                    });
+                                }
+
+                                if (subscribeListHttp.ContainsKey(subscribeObject.topic) && subscribeListHttp[subscribeObject.topic].Contains(subscribeObject.notifyUrl))
+                                {
+                                    Task.Run(() =>
+                                    {
+                                        QueueHelper.Remove(ref subscribeListHttp, subscribeObject.topic, subscribeObject.notifyUrl);
+                                    });
+                                }
                             }
                             break;
                         default:
