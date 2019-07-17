@@ -450,15 +450,49 @@ namespace SocketHelper
                                 SubscribeObject subscribeObject = (SubscribeObject)result.body;
                                 if (publishMsgList.ContainsKey(subscribeObject.topic))
                                 {
-                                    if (string.IsNullOrEmpty(subscribeObject.notifyUrl))
+                                tryPullMsgAgain:
+                                    if (publishMsgList[subscribeObject.topic].Count > 0)
                                     {
-                                        //回给socket
-                                        Send(result.workSocket, publishMsgList[subscribeObject.topic], MsgOperation.回复消息);
+                                        if (string.IsNullOrEmpty(subscribeObject.notifyUrl))
+                                        {
+                                            //回给socket
+                                            bool isGet = publishMsgList[subscribeObject.topic].TryDequeue(out object data);
+                                            if (isGet)
+                                            {
+                                                Send(result.workSocket, data, MsgOperation.回复消息);
+                                            }
+                                            else
+                                            {
+                                                goto tryPullMsgAgain;
+                                            }
+                                        }
+                                        else
+                                        {
+                                            //回给notifyUrl
+                                            bool isGet = publishMsgList[subscribeObject.topic].TryDequeue(out object data);
+                                            if (isGet)
+                                            {
+                                                var resp = HttpHelper.PostJsonData(subscribeObject.notifyUrl, JsonConvert.SerializeObject(publishMsgList[subscribeObject.topic])).Result;
+                                            }
+                                            else
+                                            {
+                                                goto tryPullMsgAgain;
+                                            }
+                                        }
                                     }
                                     else
                                     {
-                                        //回给notifyUrl
-                                        var resp = HttpHelper.PostJsonData(subscribeObject.notifyUrl, JsonConvert.SerializeObject(publishMsgList[subscribeObject.topic])).Result;
+                                        BaseMsgObject baseMsgObject = new BaseMsgObject();
+                                        baseMsgObject.code = -1;
+                                        baseMsgObject.message = $"不存在{subscribeObject.topic}主题";
+                                        if (string.IsNullOrEmpty(subscribeObject.notifyUrl))
+                                        { 
+                                            Send(result.workSocket, baseMsgObject, MsgOperation.回复消息);
+                                        }
+                                        else
+                                        {
+                                            var resp = HttpHelper.PostJsonData(subscribeObject.notifyUrl, JsonConvert.SerializeObject(baseMsgObject)).Result;
+                                        }
                                     }
                                 }
                             }
