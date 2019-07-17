@@ -42,6 +42,11 @@ namespace SocketHelper
         /// </summary>
         ConcurrentDictionary<string, ConcurrentQueue<string>> subscribeListHttp = new ConcurrentDictionary<string, ConcurrentQueue<string>>();
 
+        /// <summary>
+        /// 发布消息存储
+        /// </summary>
+        ConcurrentDictionary<string, ConcurrentQueue<object>> publishMsgList = new ConcurrentDictionary<string, ConcurrentQueue<object>>();
+
         #endregion
 
         public AsynchronousSocketListener(int port, string ipOrHost = "127.0.0.1", int connectCount = 1000)
@@ -290,6 +295,7 @@ namespace SocketHelper
                 {
                     switch (result.ope)
                     {
+                        //这个用服务端主动[推] ,服务端不保存发布消息
                         case MsgOperation.发布广播:
                             {
                                 PublishObject publishObject = (PublishObject)result.body;
@@ -318,7 +324,8 @@ namespace SocketHelper
                                 });
                             }
                             break;
-                        case MsgOperation.发布消息: //目前采用的时候轮询模式,一个个按顺序发
+                        //采用得是服务端主动[推]的轮询模式,一个个按顺序发   
+                        case MsgOperation.发布消息:
                             {
                                 PublishObject publishObject = (PublishObject)result.body;
                                 Task.Run(() =>
@@ -347,6 +354,33 @@ namespace SocketHelper
                                         }
                                     }
                                 });
+                            }
+                            break;
+                        //采用客户端来自己[拉]取,服务端保存消息队列,可以实现一个消息只会被一个订阅者拉取消费,这样客户端可以在做一个操作,在自己任务量少于N条时,有余力处理消息就可以向服务器拉取数据,可以保持负载均衡.
+                        case MsgOperation.发布消息存消息队列:
+                            {
+                                int failcount = 3;
+                                PublishObject publishObject = (PublishObject)result.body;
+                            tryStorePublishMsgSocketAgain:
+                                if (publishMsgList.ContainsKey(publishObject.topic))
+                                {
+                                    publishMsgList[publishObject.topic].Enqueue(publishObject.content);
+                                }
+                                else
+                                {
+                                    ConcurrentQueue<object> _cache = new ConcurrentQueue<object>();
+                                    _cache.Enqueue(publishObject.content);
+                                    bool success = publishMsgList.TryAdd(publishObject.topic, _cache);
+                                    if (!success)
+                                    {
+                                        failcount++;
+                                        if (failcount > 3)
+                                        {
+                                            break;
+                                        }
+                                        goto tryStorePublishMsgSocketAgain;
+                                    }
+                                }
                             }
                             break;
                         case MsgOperation.订阅消息Socket方式:
@@ -407,6 +441,24 @@ namespace SocketHelper
                                             break;
                                         }
                                         goto trySubscribeHttpAgain;
+                                    }
+                                }
+                            }
+                            break;
+                        case MsgOperation.客户端主动拉取消息:
+                            {
+                                SubscribeObject subscribeObject = (SubscribeObject)result.body;
+                                if (publishMsgList.ContainsKey(subscribeObject.topic))
+                                {
+                                    if (string.IsNullOrEmpty(subscribeObject.notifyUrl))
+                                    {
+                                        //回给socket
+                                        Send(result.workSocket, publishMsgList[subscribeObject.topic], MsgOperation.回复消息);
+                                    }
+                                    else
+                                    {
+                                        //回给notifyUrl
+                                        var resp = HttpHelper.PostJsonData(subscribeObject.notifyUrl, JsonConvert.SerializeObject(publishMsgList[subscribeObject.topic])).Result;
                                     }
                                 }
                             }
