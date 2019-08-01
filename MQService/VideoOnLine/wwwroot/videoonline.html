@@ -1,0 +1,51 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title></title>
+</head>
+<body>
+    <video id="video" autoplay="autoplay" controls="controls"></video>
+    <script>
+
+        var video = document.querySelector('video');
+
+        var assetURL = 'https://localhost:44321/video/190204084208765161-new.mp4'; //必须是https的域名
+        var mimeCodec = 'video/mp4; codecs="avc1.42E01E, mp4a.40.2"';
+
+        if ('MediaSource' in window && MediaSource.isTypeSupported(mimeCodec)) {  //判断MS是否支持该文件类型
+            var mediaSource = new MediaSource;
+            console.log(mediaSource.readyState); // closed
+            video.src = URL.createObjectURL(mediaSource); //video和MS建立连接
+            mediaSource.addEventListener('sourceopen', sourceOpen);  //只有MS的状态变为open后才能对它进行处理
+        } else {
+            console.error('Unsupported MIME type or codec: ', mimeCodec);
+        }
+
+        function sourceOpen(_) {
+            console.log(this.readyState); // open
+            var mediaSource = this;
+            var sourceBuffer = mediaSource.addSourceBuffer(mimeCodec);  //创建sourceBuffer
+            fetchAB(assetURL, function (buf) {
+                sourceBuffer.addEventListener('updateend', function (_) {
+                    mediaSource.endOfStream();
+                    video.play();//这个好像无法自动播放
+                    //console.log(mediaSource.readyState); // ended
+                });
+                sourceBuffer.appendBuffer(buf);  //核心。塞视频数据了。buf是获取到文件的二进制数据
+            });
+        }
+
+        function fetchAB(url, cb) {  //获取文件二进制数据的
+            console.log(url);
+            var xhr = new XMLHttpRequest;
+            xhr.open('get', url);
+            xhr.responseType = 'arraybuffer';
+            xhr.onload = function () {
+                cb(xhr.response);
+            };
+            xhr.send();
+        }
+    </script>
+</body>
+</html>

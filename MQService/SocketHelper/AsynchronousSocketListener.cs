@@ -16,7 +16,7 @@ using System.Timers;
 namespace SocketHelper
 {
     // State object for reading client data asynchronously
-    public class AsynchronousSocketListener
+    public class AsynchronousSocketListener : IDisposable
     {
         #region 参数
         public int port;
@@ -540,5 +540,55 @@ namespace SocketHelper
                 }
             }
         }
+
+
+        #region 构造和析构
+
+        #region IDisposable
+        [System.Diagnostics.DebuggerBrowsable(System.Diagnostics.DebuggerBrowsableState.Never)]
+        int disposedFlag;
+
+        /// <summary>
+        /// 析构函数 生命结束的时候被调用 和 构造函数相反
+        /// </summary>
+        ~AsynchronousSocketListener()
+        {
+            Dispose(false);
+        }
+
+        /// <summary>
+        /// 释放所占用的资源
+        /// </summary>
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        /// <summary>
+        /// 获取该对象是否已经被释放
+        /// </summary>
+        [System.ComponentModel.Browsable(false)]
+        public bool IsDisposed
+        {
+            get
+            {
+                return disposedFlag != 0;
+            }
+        }
+
+        #endregion
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (System.Threading.Interlocked.Increment(ref disposedFlag) != 1) return;
+            if (disposing)
+            {
+                //在这里编写托管资源释放代码
+            }
+            //在这里编写非托管资源释放代码
+        }
+
+        #endregion
     }
 }

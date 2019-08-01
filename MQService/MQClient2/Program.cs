@@ -1,6 +1,9 @@
 ﻿using Newtonsoft.Json;
 using SocketHelper;
 using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Text;
 using System.Threading;
 
 namespace MQClient2
@@ -11,15 +14,28 @@ namespace MQClient2
         {
             Console.WriteLine($"This is a Client2");
 
-            AsynchronousClient asynchronousClient = new AsynchronousClient(10000);
-            asynchronousClient.msgReceiveEvent += Handle;
-            asynchronousClient.StartClient();
+            string str = "";
+            string path = AppDomain.CurrentDomain.BaseDirectory + "/Data/20190711card.txt";
+            byte[] bs = null;
+            using (FileStream fs = new FileStream(path, FileMode.Open))
+            {
+                bs = new byte[fs.Length];
+                fs.Read(bs, 0, bs.Length);
+            }
+            str = "[" + Encoding.UTF8.GetString(bs) + "]";
 
-            Subscribe(asynchronousClient);
+            List<string> list = JsonConvert.DeserializeObject<List<string>>(str);
+            list.Sort();
 
-            Thread.Sleep(3000);
+            //AsynchronousClient asynchronousClient = new AsynchronousClient(10000);
+            //asynchronousClient.msgReceiveEvent += Handle;
+            //asynchronousClient.StartClient();
 
-            DisSubscribe(asynchronousClient);
+            //Subscribe(asynchronousClient);
+
+            //Thread.Sleep(3000);
+
+            //DisSubscribe(asynchronousClient);
 
             //while (true)
             //{

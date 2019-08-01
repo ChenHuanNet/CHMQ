@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 
 namespace SocketHelper
 {
-    public class SocketHttpListener
+    public class SocketHttpListener : IDisposable
     {
         Socket _socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);  //侦听socket
         AsynchronousClient asynchronousClient;
@@ -270,5 +270,55 @@ namespace SocketHelper
             string result = JsonConvert.SerializeObject(obj.body);
             Console.WriteLine(obj.ope.ToString() + ":" + result);
         }
+
+
+        #region 构造和析构
+
+        #region IDisposable
+        [System.Diagnostics.DebuggerBrowsable(System.Diagnostics.DebuggerBrowsableState.Never)]
+        int disposedFlag;
+
+        /// <summary>
+        /// 析构函数 生命结束的时候被调用 和 构造函数相反
+        /// </summary>
+        ~SocketHttpListener()
+        {
+            Dispose(false);
+        }
+
+        /// <summary>
+        /// 释放所占用的资源
+        /// </summary>
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        /// <summary>
+        /// 获取该对象是否已经被释放
+        /// </summary>
+        [System.ComponentModel.Browsable(false)]
+        public bool IsDisposed
+        {
+            get
+            {
+                return disposedFlag != 0;
+            }
+        }
+
+        #endregion
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (System.Threading.Interlocked.Increment(ref disposedFlag) != 1) return;
+            if (disposing)
+            {
+                //在这里编写托管资源释放代码
+            }
+            //在这里编写非托管资源释放代码
+        }
+
+        #endregion
     }
 }
