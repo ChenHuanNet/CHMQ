@@ -17,6 +17,8 @@ namespace HttpWebService
 
         static void Main(string[] args)
         {
+            Console.WriteLine($"This is a HttpServer");
+
             SocketHttpListener socketHttpListener = new SocketHttpListener(10001);
             socketHttpListener.Start();
             Console.ReadKey();
