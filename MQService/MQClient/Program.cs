@@ -6,6 +6,9 @@ using System.Threading;
 
 namespace MQClient
 {
+    /// <summary>
+    /// socket客户端
+    /// </summary>
     class Program
     {
         static void Main(string[] args)

@@ -4,6 +4,9 @@ using System.Collections.Concurrent;
 
 namespace MQServer
 {
+    /// <summary>
+    /// socket 服务端
+    /// </summary>
     class Program
     {
         static void Main(string[] args)
