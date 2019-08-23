@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace MQClient2
 {
@@ -14,18 +15,31 @@ namespace MQClient2
         {
             Console.WriteLine($"This is a Client2");
 
-            string str = "";
-            string path = AppDomain.CurrentDomain.BaseDirectory + "/Data/20190711card.txt";
-            byte[] bs = null;
-            using (FileStream fs = new FileStream(path, FileMode.Open))
+            List<int> msgs = new List<int>();
+            for (int i = 0; i < 100000; i++)
             {
-                bs = new byte[fs.Length];
-                fs.Read(bs, 0, bs.Length);
+                msgs.Add(i);
             }
-            str = "[" + Encoding.UTF8.GetString(bs) + "]";
 
-            List<string> list = JsonConvert.DeserializeObject<List<string>>(str);
-            list.Sort();
+            //这里面方法是异步的 ,但是  对外层的程序而言是同步的
+            Parallel.ForEach(msgs, (msg) =>
+            {
+                Console.WriteLine(msg);
+            });
+            Console.WriteLine("-----------");
+
+            //string str = "";
+            //string path = AppDomain.CurrentDomain.BaseDirectory + "/Data/20190711card.txt";
+            //byte[] bs = null;
+            //using (FileStream fs = new FileStream(path, FileMode.Open))
+            //{
+            //    bs = new byte[fs.Length];
+            //    fs.Read(bs, 0, bs.Length);
+            //}
+            //str = "[" + Encoding.UTF8.GetString(bs) + "]";
+
+            //List<string> list = JsonConvert.DeserializeObject<List<string>>(str);
+            //list.Sort();
 
             //AsynchronousClient asynchronousClient = new AsynchronousClient(10000);
             //asynchronousClient.msgReceiveEvent += Handle;

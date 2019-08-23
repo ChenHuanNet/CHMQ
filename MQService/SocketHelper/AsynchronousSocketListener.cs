@@ -47,6 +47,17 @@ namespace SocketHelper
         /// </summary>
         ConcurrentDictionary<string, ConcurrentQueue<object>> publishMsgList = new ConcurrentDictionary<string, ConcurrentQueue<object>>();
 
+        /// <summary>
+        /// socket 登录校验结果
+        /// </summary>
+        ConcurrentDictionary<Socket, bool> loginDic = new ConcurrentDictionary<Socket, bool>();
+
+        /// <summary>
+        /// 访问权限设置
+        /// </summary>
+
+        ConcurrentDictionary<string, string> accessDic = new ConcurrentDictionary<string, string>();
+
         #endregion
 
         public AsynchronousSocketListener(int port, string ipOrHost = "127.0.0.1", int connectCount = 1000)
@@ -61,7 +72,7 @@ namespace SocketHelper
         {
             System.Timers.Timer timer = new System.Timers.Timer();
             timer.Enabled = true;
-            timer.Interval = 200; //执行间隔时间,单位为毫秒; 这里实际间隔为10分钟  
+            timer.Interval = 200; //执行间隔时间,单位为毫秒; 
             timer.Start();
             timer.Elapsed += new System.Timers.ElapsedEventHandler(Job);
         }
@@ -219,10 +230,15 @@ namespace SocketHelper
                     {
                         return;
                     }
+
+                    //登录状态移除
+                    loginDic.TryRemove(handler, out bool loginResult);
+
                     Task.Run(() =>
                     {
                         foreach (var item in subscribeListSocket)
                         {
+                            //队列移除
                             QueueHelper.Remove(ref subscribeListSocket, item.Key, handler);
                         }
                     });
@@ -301,246 +317,314 @@ namespace SocketHelper
             DoTask();
         }
 
-        public void DoTask()
+        private void DoTask()
         {
             if (taskQueue.Count > 0)
             {
                 bool res = taskQueue.TryDequeue(out OperateObject result);
                 if (res)
                 {
-                    switch (result.ope)
+                    try
                     {
-                        //这个用服务端主动[推] ,服务端不保存发布消息
-                        case MsgOperation.发布广播:
+                        if (result.ope != MsgOperation.登录校验)
+                        {
+                            if (!loginDic.ContainsKey(result.workSocket) || !loginDic[result.workSocket])
                             {
-                                PublishObject publishObject = (PublishObject)result.body;
-                                Task.Run(() =>
+                                Console.WriteLine($" ip=[{result.workSocket.RemoteEndPoint.ToString()}] 尚未登录! 无法执行后续操作");
+                                return;
+                            }
+                        }
+
+                        switch (result.ope)
+                        {
+                            //这个用服务端主动[推] ,服务端不保存发布消息
+                            case MsgOperation.发布广播:
                                 {
-                                    //订阅者中有人关注这个话题 就向订阅者发送消息
-                                    if (subscribeListSocket.ContainsKey(publishObject.topic))
+                                    PublishObject publishObject = (PublishObject)result.body;
+                                    Task.Run(() =>
                                     {
-                                        Console.WriteLine($"准备发布消息给Socket订阅者,订阅数:{subscribeListSocket[publishObject.topic].Count}");
-                                        //并行执行,任务开销大的时候效率高于单纯的for循环
-                                        Parallel.ForEach(subscribeListSocket[publishObject.topic], (socket) =>
+                                        //订阅者中有人关注这个话题 就向订阅者发送消息
+                                        if (subscribeListSocket.ContainsKey(publishObject.topic))
                                         {
-                                            if (socket != null && socket.Connected)
+                                            Console.WriteLine($"准备发布消息给Socket订阅者,订阅数:{subscribeListSocket[publishObject.topic].Count}");
+                                            //并行执行,任务开销大的时候效率高于单纯的for循环
+                                            Parallel.ForEach(subscribeListSocket[publishObject.topic], (socket) =>
                                             {
-                                                Send(socket, publishObject.content, MsgOperation.发布广播);
+                                                if (socket != null && socket.Connected)
+                                                {
+                                                    Send(socket, publishObject.content, MsgOperation.发布广播);
+                                                }
+                                            });
+                                        }
+
+                                        if (subscribeListHttp.ContainsKey(publishObject.topic))
+                                        {
+                                            Console.WriteLine($"准备发布消息给Http订阅者,订阅数:{subscribeListHttp[publishObject.topic].Count}");
+                                            //并行执行,任务开销大的时候效率高于单纯的for循环
+                                            Parallel.ForEach(subscribeListHttp[publishObject.topic], (notifyUrl) =>
+                                            {
+                                                string resp = HttpHelper.PostJsonData(notifyUrl, JsonConvert.SerializeObject(publishObject.content)).Result;
+                                            });
+                                        }
+                                    });
+                                }
+                                break;
+                            //采用得是服务端主动[推]的轮询模式,一个个按顺序发   不推荐使用  客户端主动拉比较好
+                            case MsgOperation.发布消息:
+                                {
+                                    PublishObject publishObject = (PublishObject)result.body;
+                                    Task.Run(() =>
+                                    {
+                                        //订阅者中有人关注这个话题 就向订阅者发送消息
+                                        if (subscribeListSocket.ContainsKey(publishObject.topic) && subscribeListSocket[publishObject.topic].Count > 0)
+                                        {
+                                            //轮询发
+                                            Console.WriteLine($"准备发布消息给Socket订阅者,订阅数:{subscribeListSocket[publishObject.topic].Count}");
+                                        tryTakeSocketAgain:
+                                            subscribeListSocket[publishObject.topic].TryDequeue(out Socket socket);//头部取出来
+                                            if (socket == null || !socket.Connected)
+                                            {
+                                                QueueHelper.Remove(ref subscribeListSocket, publishObject.topic, socket);
+                                                goto tryTakeSocketAgain;
                                             }
-                                        });
-                                    }
-
-                                    if (subscribeListHttp.ContainsKey(publishObject.topic))
-                                    {
-                                        Console.WriteLine($"准备发布消息给Http订阅者,订阅数:{subscribeListHttp[publishObject.topic].Count}");
-                                        //并行执行,任务开销大的时候效率高于单纯的for循环
-                                        Parallel.ForEach(subscribeListHttp[publishObject.topic], (notifyUrl) =>
-                                        {
-                                            string resp = HttpHelper.PostJsonData(notifyUrl, JsonConvert.SerializeObject(publishObject.content)).Result;
-                                        });
-                                    }
-                                });
-                            }
-                            break;
-                        //采用得是服务端主动[推]的轮询模式,一个个按顺序发   不推荐使用  客户端主动拉比较好
-                        case MsgOperation.发布消息:
-                            {
-                                PublishObject publishObject = (PublishObject)result.body;
-                                Task.Run(() =>
-                                {
-                                    //订阅者中有人关注这个话题 就向订阅者发送消息
-                                    if (subscribeListSocket.ContainsKey(publishObject.topic) && subscribeListSocket[publishObject.topic].Count > 0)
-                                    {
-                                        //轮询发
-                                        Console.WriteLine($"准备发布消息给Socket订阅者,订阅数:{subscribeListSocket[publishObject.topic].Count}");
-                                    tryTakeSocketAgain:
-                                        subscribeListSocket[publishObject.topic].TryDequeue(out Socket socket);//头部取出来
-                                        if (socket == null || !socket.Connected)
-                                        {
-                                            QueueHelper.Remove(ref subscribeListSocket, publishObject.topic, socket);
-                                            goto tryTakeSocketAgain;
-                                        }
-                                        Send(socket, publishObject.content, MsgOperation.发布消息);
-                                        if (!subscribeListSocket[publishObject.topic].Contains(socket))
-                                        {
-                                            subscribeListSocket[publishObject.topic].Enqueue(socket);//加入到尾部去
-                                        }
-                                    }
-
-                                    if (subscribeListHttp.ContainsKey(publishObject.topic) && subscribeListHttp[publishObject.topic].Count > 0)
-                                    {
-                                        Console.WriteLine($"准备发布消息给Http订阅者,订阅数:{subscribeListHttp[publishObject.topic].Count}");
-                                    tryTakeHttpAgain:
-                                        subscribeListHttp[publishObject.topic].TryDequeue(out string notifyUrl);//头部取出来
-                                        string resp = HttpHelper.PostJsonData(notifyUrl, JsonConvert.SerializeObject(publishObject.content)).Result;
-                                        if (resp == null || resp.ToUpper() != "SUCCESS")
-                                        {
-                                            QueueHelper.Remove(ref subscribeListHttp, publishObject.topic, notifyUrl);
-                                            goto tryTakeHttpAgain;
-                                        }
-                                        if (!subscribeListHttp[publishObject.topic].Contains(notifyUrl))
-                                        {
-                                            subscribeListHttp[publishObject.topic].Enqueue(notifyUrl);//加入到尾部去  
-                                        }
-                                    }
-                                });
-                            }
-                            break;
-                        //采用客户端来自己[拉]取,服务端保存消息队列,可以实现一个消息只会被一个订阅者拉取消费,这样客户端可以在做一个操作,在自己任务量少于N条时,有余力处理消息就可以向服务器拉取数据,可以保持负载均衡.
-                        case MsgOperation.发布消息存消息队列:
-                            {
-                                int failcount = 3;
-                                PublishObject publishObject = (PublishObject)result.body;
-                            tryStorePublishMsgSocketAgain:
-                                if (publishMsgList.ContainsKey(publishObject.topic))
-                                {
-                                    publishMsgList[publishObject.topic].Enqueue(publishObject.content);
-                                }
-                                else
-                                {
-                                    ConcurrentQueue<object> _cache = new ConcurrentQueue<object>();
-                                    _cache.Enqueue(publishObject.content);
-                                    bool success = publishMsgList.TryAdd(publishObject.topic, _cache);
-                                    if (!success)
-                                    {
-                                        failcount++;
-                                        if (failcount > 3)
-                                        {
-                                            break;
-                                        }
-                                        goto tryStorePublishMsgSocketAgain;
-                                    }
-                                }
-                            }
-                            break;
-                        case MsgOperation.订阅消息Socket方式:
-                            {
-                                int failcount = 3;
-                                SubscribeObject subscribeObject = (SubscribeObject)result.body;
-                            trySubscribeSocketAgain:
-                                if (subscribeListSocket.ContainsKey(subscribeObject.topic))
-                                {
-                                    if (!subscribeListSocket[subscribeObject.topic].Contains(result.workSocket))
-                                    {
-                                        subscribeListSocket[subscribeObject.topic].Enqueue(result.workSocket);
-                                    }
-                                }
-                                else
-                                {
-                                    ConcurrentQueue<Socket> _cache = new ConcurrentQueue<Socket>();
-                                    _cache.Enqueue(result.workSocket);
-                                    bool success = subscribeListSocket.TryAdd(subscribeObject.topic, _cache);
-                                    if (!success)
-                                    {
-                                        failcount++;
-                                        if (failcount > 3)
-                                        {
-                                            break;
-                                        }
-                                        goto trySubscribeSocketAgain;
-                                    }
-                                }
-                            }
-                            break;
-                        case MsgOperation.订阅消息Http方式:
-                            {
-                                int failcount = 3;
-                                SubscribeObject subscribeObject = (SubscribeObject)result.body;
-                                if (string.IsNullOrEmpty(subscribeObject.notifyUrl))
-                                {
-                                    break;
-                                }
-                            trySubscribeHttpAgain:
-                                if (subscribeListHttp.ContainsKey(subscribeObject.topic))
-                                {
-                                    if (!subscribeListHttp[subscribeObject.topic].Contains(subscribeObject.notifyUrl))
-                                    {
-                                        subscribeListHttp[subscribeObject.topic].Enqueue(subscribeObject.notifyUrl);
-                                    }
-                                }
-                                else
-                                {
-                                    ConcurrentQueue<string> _cache = new ConcurrentQueue<string>();
-                                    _cache.Enqueue(subscribeObject.notifyUrl);
-                                    bool success = subscribeListHttp.TryAdd(subscribeObject.topic, _cache);
-                                    if (!success)
-                                    {
-                                        failcount++;
-                                        if (failcount > 3)
-                                        {
-                                            break;
-                                        }
-                                        goto trySubscribeHttpAgain;
-                                    }
-                                }
-                            }
-                            break;
-                        //没有主题或者没消息暂时先不通知客户端
-                        case MsgOperation.客户端主动拉取消息:
-                            {
-                                SubscribeObject subscribeObject = (SubscribeObject)result.body;
-                                if (publishMsgList.ContainsKey(subscribeObject.topic))
-                                {
-                                tryPullMsgAgain:
-                                    if (publishMsgList[subscribeObject.topic].Count > 0)
-                                    {
-                                        if (string.IsNullOrEmpty(subscribeObject.notifyUrl))
-                                        {
-                                            //回给socket
-                                            bool isGet = publishMsgList[subscribeObject.topic].TryDequeue(out object data);
-                                            if (isGet)
+                                            Send(socket, publishObject.content, MsgOperation.发布消息);
+                                            if (!subscribeListSocket[publishObject.topic].Contains(socket))
                                             {
-                                                Send(result.workSocket, data, MsgOperation.客户端主动拉取消息);
+                                                subscribeListSocket[publishObject.topic].Enqueue(socket);//加入到尾部去
+                                            }
+                                        }
+
+                                        if (subscribeListHttp.ContainsKey(publishObject.topic) && subscribeListHttp[publishObject.topic].Count > 0)
+                                        {
+                                            Console.WriteLine($"准备发布消息给Http订阅者,订阅数:{subscribeListHttp[publishObject.topic].Count}");
+                                        tryTakeHttpAgain:
+                                            subscribeListHttp[publishObject.topic].TryDequeue(out string notifyUrl);//头部取出来
+                                            string resp = HttpHelper.PostJsonData(notifyUrl, JsonConvert.SerializeObject(publishObject.content)).Result;
+                                            if (resp == null || resp.ToUpper() != "SUCCESS")
+                                            {
+                                                QueueHelper.Remove(ref subscribeListHttp, publishObject.topic, notifyUrl);
+                                                goto tryTakeHttpAgain;
+                                            }
+                                            if (!subscribeListHttp[publishObject.topic].Contains(notifyUrl))
+                                            {
+                                                subscribeListHttp[publishObject.topic].Enqueue(notifyUrl);//加入到尾部去  
+                                            }
+                                        }
+                                    });
+                                }
+                                break;
+                            //采用客户端来自己[拉]取,服务端保存消息队列,可以实现一个消息只会被一个订阅者拉取消费,这样客户端可以在做一个操作,在自己任务量少于N条时,有余力处理消息就可以向服务器拉取数据,可以保持负载均衡.
+                            case MsgOperation.发布消息存消息队列:
+                                {
+                                    int failcount = 3;
+                                    PublishObject publishObject = (PublishObject)result.body;
+                                tryStorePublishMsgSocketAgain:
+                                    if (publishMsgList.ContainsKey(publishObject.topic))
+                                    {
+                                        publishMsgList[publishObject.topic].Enqueue(publishObject.content);
+                                    }
+                                    else
+                                    {
+                                        ConcurrentQueue<object> _cache = new ConcurrentQueue<object>();
+                                        _cache.Enqueue(publishObject.content);
+                                        bool success = publishMsgList.TryAdd(publishObject.topic, _cache);
+                                        if (!success)
+                                        {
+                                            failcount++;
+                                            if (failcount > 3)
+                                            {
+                                                break;
+                                            }
+                                            goto tryStorePublishMsgSocketAgain;
+                                        }
+                                    }
+                                }
+                                break;
+                            case MsgOperation.订阅消息Socket方式:
+                                {
+                                    int failcount = 3;
+                                    SubscribeObject subscribeObject = (SubscribeObject)result.body;
+                                trySubscribeSocketAgain:
+                                    if (subscribeListSocket.ContainsKey(subscribeObject.topic))
+                                    {
+                                        if (!subscribeListSocket[subscribeObject.topic].Contains(result.workSocket))
+                                        {
+                                            subscribeListSocket[subscribeObject.topic].Enqueue(result.workSocket);
+                                        }
+                                    }
+                                    else
+                                    {
+                                        ConcurrentQueue<Socket> _cache = new ConcurrentQueue<Socket>();
+                                        _cache.Enqueue(result.workSocket);
+                                        bool success = subscribeListSocket.TryAdd(subscribeObject.topic, _cache);
+                                        if (!success)
+                                        {
+                                            failcount++;
+                                            if (failcount > 3)
+                                            {
+                                                break;
+                                            }
+                                            goto trySubscribeSocketAgain;
+                                        }
+                                    }
+                                }
+                                break;
+                            case MsgOperation.订阅消息Http方式:
+                                {
+                                    int failcount = 3;
+                                    SubscribeObject subscribeObject = (SubscribeObject)result.body;
+                                    if (string.IsNullOrEmpty(subscribeObject.notifyUrl))
+                                    {
+                                        break;
+                                    }
+                                trySubscribeHttpAgain:
+                                    if (subscribeListHttp.ContainsKey(subscribeObject.topic))
+                                    {
+                                        if (!subscribeListHttp[subscribeObject.topic].Contains(subscribeObject.notifyUrl))
+                                        {
+                                            subscribeListHttp[subscribeObject.topic].Enqueue(subscribeObject.notifyUrl);
+                                        }
+                                    }
+                                    else
+                                    {
+                                        ConcurrentQueue<string> _cache = new ConcurrentQueue<string>();
+                                        _cache.Enqueue(subscribeObject.notifyUrl);
+                                        bool success = subscribeListHttp.TryAdd(subscribeObject.topic, _cache);
+                                        if (!success)
+                                        {
+                                            failcount++;
+                                            if (failcount > 3)
+                                            {
+                                                break;
+                                            }
+                                            goto trySubscribeHttpAgain;
+                                        }
+                                    }
+                                }
+                                break;
+                            //没有主题或者没消息暂时先不通知客户端
+                            case MsgOperation.客户端主动拉取消息:
+                                {
+                                    SubscribeObject subscribeObject = (SubscribeObject)result.body;
+                                    if (publishMsgList.ContainsKey(subscribeObject.topic))
+                                    {
+                                    tryPullMsgAgain:
+                                        if (publishMsgList[subscribeObject.topic].Count > 0)
+                                        {
+                                            if (string.IsNullOrEmpty(subscribeObject.notifyUrl))
+                                            {
+                                                //回给socket
+                                                bool isGet = publishMsgList[subscribeObject.topic].TryDequeue(out object data);
+                                                if (isGet)
+                                                {
+                                                    Send(result.workSocket, data, MsgOperation.客户端主动拉取消息);
+                                                }
+                                                else
+                                                {
+                                                    goto tryPullMsgAgain;
+                                                }
                                             }
                                             else
                                             {
-                                                goto tryPullMsgAgain;
+                                                //回给notifyUrl
+                                                bool isGet = publishMsgList[subscribeObject.topic].TryDequeue(out object data);
+                                                if (isGet)
+                                                {
+                                                    var resp = HttpHelper.PostJsonData(subscribeObject.notifyUrl, JsonConvert.SerializeObject(publishMsgList[subscribeObject.topic])).Result;
+                                                }
+                                                else
+                                                {
+                                                    goto tryPullMsgAgain;
+                                                }
                                             }
+                                        }
+                                    }
+                                }
+                                break;
+                            case MsgOperation.取消订阅:
+                                {
+                                    SubscribeObject subscribeObject = (SubscribeObject)result.body;
+                                    if (subscribeListSocket.ContainsKey(subscribeObject.topic) && subscribeListSocket[subscribeObject.topic].Contains(result.workSocket))
+                                    {
+                                        Task.Run(() =>
+                                        {
+                                            QueueHelper.Remove(ref subscribeListSocket, subscribeObject.topic, result.workSocket);
+                                        });
+                                    }
+
+                                    if (subscribeListHttp.ContainsKey(subscribeObject.topic) && subscribeListHttp[subscribeObject.topic].Contains(subscribeObject.notifyUrl))
+                                    {
+                                        Task.Run(() =>
+                                        {
+                                            QueueHelper.Remove(ref subscribeListHttp, subscribeObject.topic, subscribeObject.notifyUrl);
+                                        });
+                                    }
+                                }
+                                break;
+                            case MsgOperation.登录校验:
+                                {
+                                    AccessObject access = (AccessObject)result.body;
+                                    AccessResult accessResult = new AccessResult();
+                                    if (access != null)
+                                    {
+                                        if (!accessDic.ContainsKey(access.AccessKeyId))
+                                        {
+                                            accessResult.Code = -1;
+                                            accessResult.Message = $"[{result.workSocket.RemoteEndPoint.ToString()}]您没有登录权限";
+                                            Send(result.workSocket, accessResult, MsgOperation.登录校验);
+                                            return;
+                                        }
+
+                                        DateTime loginTime = Parse.TS2DT(Convert.ToDouble(access.CurrentTimeSpan));
+                                        if (loginTime < DateTime.Now.AddMinutes(-5) || loginTime > DateTime.Now.AddMinutes(5))
+                                        {
+                                            accessResult.Code = -1;
+                                            accessResult.Message = $"[{result.workSocket.RemoteEndPoint.ToString()}]CurrentTimeSpan超时";
+                                            Send(result.workSocket, accessResult, MsgOperation.登录校验);
+                                            return;
+                                        }
+
+                                        string prepay = access.AccessKeyId + access.CurrentTimeSpan + accessDic[access.AccessKeyId];
+                                        string sign = MD5Helper.Sign(prepay);
+                                        if (sign.Equals(access.Sign.ToUpper()))
+                                        {
+                                            loginDic.TryAdd(result.workSocket, true);
+                                            accessResult.Code = 0;
+                                            accessResult.Message = $"[{result.workSocket.RemoteEndPoint.ToString()}]登录成功";
+                                            Send(result.workSocket, accessResult, MsgOperation.登录校验);
                                         }
                                         else
                                         {
-                                            //回给notifyUrl
-                                            bool isGet = publishMsgList[subscribeObject.topic].TryDequeue(out object data);
-                                            if (isGet)
-                                            {
-                                                var resp = HttpHelper.PostJsonData(subscribeObject.notifyUrl, JsonConvert.SerializeObject(publishMsgList[subscribeObject.topic])).Result;
-                                            }
-                                            else
-                                            {
-                                                goto tryPullMsgAgain;
-                                            }
+                                            accessResult.Code = -1;
+                                            accessResult.Message = $"[{result.workSocket.RemoteEndPoint.ToString()}]登录失败";
+                                            Send(result.workSocket, accessResult, MsgOperation.登录校验);
                                         }
                                     }
                                 }
-                            }
-                            break;
-                        case MsgOperation.取消订阅:
-                            {
-                                SubscribeObject subscribeObject = (SubscribeObject)result.body;
-                                if (subscribeListSocket.ContainsKey(subscribeObject.topic) && subscribeListSocket[subscribeObject.topic].Contains(result.workSocket))
-                                {
-                                    Task.Run(() =>
-                                    {
-                                        QueueHelper.Remove(ref subscribeListSocket, subscribeObject.topic, result.workSocket);
-                                    });
-                                }
-
-                                if (subscribeListHttp.ContainsKey(subscribeObject.topic) && subscribeListHttp[subscribeObject.topic].Contains(subscribeObject.notifyUrl))
-                                {
-                                    Task.Run(() =>
-                                    {
-                                        QueueHelper.Remove(ref subscribeListHttp, subscribeObject.topic, subscribeObject.notifyUrl);
-                                    });
-                                }
-                            }
-                            break;
-                        default:
-                            break;
+                                break;
+                            default:
+                                break;
+                        }
                     }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"task任务处理失败 ip:[{result.workSocket.RemoteEndPoint.ToString()}] ex:{ex}");
+                    }
+
                 }
             }
         }
 
+        /// <summary>
+        /// 添加授权用户访问配置信息
+        /// </summary>
+        /// <param name="accessKeyId"></param>
+        /// <param name="accessKeySecret"></param>
+        /// <returns></returns>
+        public bool AddAccessConfig(string accessKeyId, string accessKeySecret)
+        {
+            return accessDic.TryAdd(accessKeyId, accessKeySecret);
+        }
 
         #region 构造和析构
 

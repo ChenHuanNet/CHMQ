@@ -37,6 +37,10 @@ namespace MQClient
                 {
                     Publish(asynchronousClient);
                 }
+                else if (input == "9")
+                {
+                    login(asynchronousClient);
+                }
                 else if (input == "exit")
                 {
                     break;
@@ -46,6 +50,10 @@ namespace MQClient
             Console.ReadLine();
         }
 
+        /// <summary>
+        /// 订阅
+        /// </summary>
+        /// <param name="asynchronousClient"></param>
         private static void Subscribe(AsynchronousClient asynchronousClient)
         {
             SubscribeObject subscribeObject = new SubscribeObject();
@@ -55,6 +63,10 @@ namespace MQClient
 
         }
 
+        /// <summary>
+        /// 发布
+        /// </summary>
+        /// <param name="asynchronousClient"></param>
         private static void Publish(AsynchronousClient asynchronousClient)
         {
             PublishObject publishObject = new PublishObject();
@@ -62,6 +74,20 @@ namespace MQClient
             publishObject.content = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + new Random().Next(999).ToString();
             Console.WriteLine($"我在主题[{publishObject.topic}]发布了一条消息:{publishObject.content}");
             asynchronousClient.Send(publishObject, MsgOperation.发布广播);
+        }
+
+        /// <summary>
+        /// 登录
+        /// </summary>
+        /// <param name="asynchronousClient"></param>
+        private static void login(AsynchronousClient asynchronousClient)
+        {
+            AccessObject accessObject = new AccessObject();
+            accessObject.AccessKeyId = "user1";
+            accessObject.CurrentTimeSpan = Parse.DT2TS(DateTime.Now);
+            accessObject.Sign = MD5Helper.Sign(accessObject.AccessKeyId + accessObject.CurrentTimeSpan + "password1");
+            Console.WriteLine($"我准备登录");
+            asynchronousClient.Send(accessObject, MsgOperation.登录校验);
         }
 
         /// <summary>

@@ -243,6 +243,9 @@ namespace SocketHelper
                 errmsg = "";
                 switch (msgOperation)
                 {
+                    case MsgOperation.登录校验:
+                        t = JsonConvert.DeserializeObject<AccessObject>(json);
+                        break;
                     case MsgOperation.发布广播:
                         t = JsonConvert.DeserializeObject<PublishObject>(json);
                         break;
